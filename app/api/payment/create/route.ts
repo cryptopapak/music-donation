@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
 import { createPayment } from '@/lib/payments/yukassa';
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const { amount, description, donorName, email } = validation.data;
 
     // Создание доната в Supabase (статус processing - ожидает оплаты)
-    const { data: donation, error: donationError } = await supabase
+    const { data: donation, error: donationError } = await supabaseAdmin
       .from('donations')
       .insert({
         amount,
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     // Обновляем донат с payment_id
     if (paymentResult.paymentId) {
-      await supabase
+      await supabaseAdmin
         .from('donations')
         .update({ payment_id: paymentResult.paymentId })
         .eq('id', donation.id);

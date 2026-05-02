@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
 
 // Схема валидации для создания трека в очереди
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const { track_link, donor_name, message, amount } = validation.data;
 
     // Создание доната в Supabase
-    const { data: donation, error: donationError } = await supabase
+    const { data: donation, error: donationError } = await supabaseAdmin
       .from('donations')
       .insert({
         amount,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Создание/получение трека
-    const { data: track, error: trackError } = await supabase
+    const { data: track, error: trackError } = await supabaseAdmin
       .from('tracks')
       .upsert(
         {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Добавление в очередь
-    const { data: queueItem, error: queueError } = await supabase
+    const { data: queueItem, error: queueError } = await supabaseAdmin
       .from('queue')
       .insert({
         track_id: track.id,

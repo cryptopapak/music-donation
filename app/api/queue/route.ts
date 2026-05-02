@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Получение всех элементов очереди для подсчета общего количества
-    const { data: queueAll, error: countError } = await supabase
+    const { data: queueAll, error: countError } = await supabaseAdmin
       .from('queue')
       .select('id');
 
@@ -36,11 +36,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Получение треков с сортировкой и пагинацией
-    // Сначала по amount (убывание), затем по created_at
-    const { data: queueItems, error: queueError } = await supabase
+    // Сортировка по created_at (по возрастанию) для очереди
+    const { data: queueItems, error: queueError } = await supabaseAdmin
       .from('queue')
       .select('id, position, status, started_at, ended_at, created_at, donation_id, track_id')
-      .order('amount', { ascending: false })
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -57,13 +56,13 @@ export async function GET(request: NextRequest) {
     const trackIds = [...new Set((queueItems || []).map((item: any) => item.track_id).filter(Boolean))];
 
     // Получаем данные о донатах
-    const { data: donations, error: donationsError } = await supabase
+    const { data: donations, error: donationsError } = await supabaseAdmin
       .from('donations')
       .select('id, amount, created_at')
       .in('id', donationIds);
 
     // Получаем данные о треках
-    const { data: tracks, error: tracksError } = await supabase
+    const { data: tracks, error: tracksError } = await supabaseAdmin
       .from('tracks')
       .select('id, url, provider, title, artist, thumbnail_url, duration')
       .in('id', trackIds);
@@ -137,7 +136,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Обновляем статус элемента очереди
-    const { data: updatedQueue, error } = await supabase
+    const { data: updatedQueue, error } = await supabaseAdmin
       .from('queue')
       .update({
         status,
