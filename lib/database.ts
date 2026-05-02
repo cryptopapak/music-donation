@@ -132,10 +132,10 @@ export interface Database {
 
 // Добавление трека в очередь (используется для webhook)
 export async function addTrackToQueue(trackUrl: string) {
-  const { supabase } = await import('@/lib/supabase');
+  const { supabaseAdmin } = await import('@/lib/supabase');
   
   // Создание/получение трека
-  const { data: track, error: trackError } = await supabase
+  const { data: track, error: trackError } = await supabaseAdmin
     .from('tracks')
     .upsert(
       {
@@ -153,7 +153,7 @@ export async function addTrackToQueue(trackUrl: string) {
   }
 
   // Получение последней донатной записи для этого трека
-  const { data: donation, error: donationError } = await supabase
+  const { data: donation, error: donationError } = await supabaseAdmin
     .from('donations')
     .select('*')
     .eq('track_url', trackUrl)
@@ -168,7 +168,7 @@ export async function addTrackToQueue(trackUrl: string) {
   }
 
   // Добавление в очередь
-  const { error: queueError } = await supabase
+  const { error: queueError } = await supabaseAdmin
     .from('queue')
     .insert({
       track_id: track.id,
