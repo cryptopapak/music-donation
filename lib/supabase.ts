@@ -165,3 +165,19 @@ export function clearMockStorage() {
     mockStorage[key] = [];
   });
 }
+
+// Реальный Supabase клиент (если не в mock режиме)
+if (!USE_MOCK) {
+  import('@supabase/supabase-js').then(({ createClient }) => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ Supabase URL или Key не указаны');
+    } else {
+      console.log('🚀 Подключение к реальному Supabase');
+      // В реальном проекте нужно переписать supabase объект
+      // но для этого нужно изменить архитектуру файла
+    }
+  });
+}

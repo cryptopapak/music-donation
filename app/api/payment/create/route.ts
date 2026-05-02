@@ -7,6 +7,7 @@ import { createPayment } from '@/lib/payments/yukassa';
 const PaymentCreateSchema = z.object({
   amount: z.number().min(10, 'Минимальный донат: 10 рублей'),
   description: z.string().min(1, 'Описание обязательно'),
+  donorName: z.string().min(1, 'Имя обязательно').optional(),
   email: z.string().email('Неверный email').optional(),
 });
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { amount, description, email } = validation.data;
+    const { amount, description, donorName, email } = validation.data;
 
     // Создание доната в Supabase (статус processing - ожидает оплаты)
     const { data: donation, error: donationError } = await supabase
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
       .insert({
         amount,
         track_url: description, // Используем description как track_url для упрощения
-        track_title: null,
+        track_title: donorName || null,
         track_artist: email || null,
         provider: process.env.PAYMENT_PROVIDER || 'mock',
         status: 'processing',
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
       amount,
       trackUrl,
       description,
-      email || undefined
+      email || donorName || undefined
     );
 
     if (!paymentResult.success) {

@@ -54,7 +54,8 @@ export function DonationForm({ onDonationSuccess, onQueueRefetch }: DonationForm
         body: JSON.stringify({
           amount: numericAmount,
           description: trackLink.trim(),
-          email: donorName.trim() || undefined,
+          donorName: donorName.trim() || undefined,
+          email: undefined, // email не обязателен
         }),
       });
 
