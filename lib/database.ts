@@ -149,12 +149,9 @@ export async function addTrackToQueue(donationId: string) {
   }
 
   // Определение провайдера из URL
-  let provider = 'unknown';
-  if (donation.track_url.includes('youtube.com') || donation.track_url.includes('youtu.be')) {
-    provider = 'youtube';
-  } else if (donation.track_url.includes('soundcloud.com')) {
-    provider = 'soundcloud';
-  }
+  const provider = donation.track_url.includes('youtube.com') || donation.track_url.includes('youtu.be')
+    ? 'youtube'
+    : 'soundcloud';
 
   // Создание/получение трека
   const { data: track, error: trackError } = await supabaseAdmin
