@@ -133,6 +133,7 @@ export interface Database {
 // Добавление трека в очередь (используется для webhook)
 export async function addTrackToQueue(donationId: string) {
   const { supabaseAdmin } = await import('@/lib/supabase');
+  const { fetchMetadataFromUrl } = await import('@/lib/metadata-parser');
   
   // Получение доната
   const { data: donation, error: donationError } = await supabaseAdmin
@@ -147,13 +148,23 @@ export async function addTrackToQueue(donationId: string) {
     throw new Error('Failed to find donation');
   }
 
+  // Определение провайдера из URL
+  let provider = 'unknown';
+  if (donation.track_url.includes('youtube.com') || donation.track_url.includes('youtu.be')) {
+    provider = 'youtube';
+  } else if (donation.track_url.includes('spotify.com')) {
+    provider = 'spotify';
+  } else if (donation.track_url.includes('soundcloud.com')) {
+    provider = 'soundcloud';
+  }
+
   // Создание/получение трека
   const { data: track, error: trackError } = await supabaseAdmin
     .from('tracks')
     .upsert(
       {
         url: donation.track_url,
-        provider: 'yookassa',
+        provider: provider,
       },
       { onConflict: 'url' }
     )
@@ -163,6 +174,29 @@ export async function addTrackToQueue(donationId: string) {
   if (trackError) {
     console.error('Track upsert error:', trackError);
     throw new Error('Failed to create track');
+  }
+
+  // Попытка получить метаданные
+  try {
+    const metadata = await fetchMetadataFromUrl(donation.track_url);
+    
+    // Обновление трека метаданными
+    const { error: updateError } = await supabaseAdmin
+      .from('tracks')
+      .update({
+        title: metadata.title,
+        artist: metadata.artist,
+        thumbnail_url: metadata.thumbnail_url,
+        duration: metadata.duration
+      })
+      .eq('id', track.id);
+
+    if (updateError) {
+      console.error('Track metadata update error:', updateError);
+    }
+  } catch (metadataError) {
+    console.error('Failed to fetch metadata for track:', metadataError);
+    // Не прерываем выполнение, если не удалось получить метаданные
   }
 
   // Добавление в очередь
