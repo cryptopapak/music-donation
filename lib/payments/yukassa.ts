@@ -28,6 +28,7 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     metadata: {
       trackUrl,
     },
+    capture: true,
   };
 
   try {
