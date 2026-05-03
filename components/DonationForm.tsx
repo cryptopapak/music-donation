@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { isValidDonationAmount } from '@/lib/parser';
 
 interface DonationFormProps {
   onDonationSuccess?: () => void;
@@ -23,7 +24,7 @@ export function DonationForm({ onDonationSuccess, onQueueRefetch }: DonationForm
 
     // Валидация
     const numericAmount = parseFloat(amount);
-    if (isNaN(numericAmount) || numericAmount < 10) {
+    if (!isValidDonationAmount(numericAmount)) {
       setError('Минимальный донат: 10 рублей');
       return;
     }
