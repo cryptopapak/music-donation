@@ -69,11 +69,11 @@ async function handlePaymentSucceeded(payment: any) {
 
   console.log(`💰 Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
 
-  // Обновляем статус доната на succeeded
+  // Обновляем статус доната на completed
   const { error: donationError } = await supabaseAdmin
     .from('donations')
     .update({
-      status: 'succeeded',
+      status: 'completed',
       payment_id: paymentId,
     })
     .eq('payment_id', paymentId)
