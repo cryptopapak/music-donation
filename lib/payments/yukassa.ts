@@ -102,7 +102,7 @@ export async function createMockPayment(amount: number, trackUrl: string) {
 
 // Основная функция создания платежа
 export async function createPayment(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string) {
-  const provider = process.env.PAYMENT_PROVIDER || 'mock';
+  const provider = process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yukassa' : 'mock';
 
   if (provider === 'mock') {
     return createMockPayment(amount, trackUrl);
@@ -121,7 +121,7 @@ export async function createPayment(amount: number, trackUrl: string, trackTitle
 
 // Основная функция проверки платежа
 export async function verifyPayment(paymentId: string): Promise<boolean> {
-  const provider = process.env.PAYMENT_PROVIDER || 'mock';
+  const provider = process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yukassa' : 'mock';
 
   if (provider === 'mock') {
     return true;

@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         track_url: description, // Используем description как track_url для упрощения
         track_title: donorName || null,
         track_artist: email || null,
-        provider: process.env.PAYMENT_PROVIDER || 'mock',
+        provider: process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yookassa' : 'mock',
         status: 'processing',
       })
       .select()
