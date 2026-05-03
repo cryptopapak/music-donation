@@ -109,3 +109,8 @@ export function normalizeTrack(track: Track): Track {
     thumbnailUrl: track.thumbnailUrl?.trim() || null,
   };
 }
+
+// Валидация суммы доната
+export function isValidDonationAmount(amount: number): boolean {
+  return amount >= 10 && amount <= 100000;
+}
