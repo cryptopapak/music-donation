@@ -10,9 +10,14 @@ if (!YUKASSA_SHOP_ID || !YUKASSA_SECRET_KEY) {
 }
 
 // Создание платежа
-export async function createYukassaPayment(amount: number, trackUrl: string, description: string) {
+export async function createYukassaPayment(amount: number, trackUrl: string, description: string, donationId?: string) {
   if (!YUKASSA_SHOP_ID || !YUKASSA_SECRET_KEY) {
     throw new Error('ЮKassa не настроена');
+  }
+
+  const metadata: Record<string, string> = { trackUrl };
+  if (donationId) {
+    metadata.donationId = donationId;
   }
 
   const paymentData = {
@@ -25,9 +30,7 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success`,
     },
     description: description,
-    metadata: {
-      trackUrl,
-    },
+    metadata,
     capture: true,
   };
 
@@ -102,7 +105,7 @@ export async function createMockPayment(amount: number, trackUrl: string) {
 }
 
 // Основная функция создания платежа
-export async function createPayment(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string) {
+export async function createPayment(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string, donationId?: string) {
   const provider = process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yukassa' : 'mock';
 
   if (provider === 'mock') {
@@ -110,11 +113,11 @@ export async function createPayment(amount: number, trackUrl: string, trackTitle
   }
 
   if (provider === 'yukassa') {
-    const description = trackArtist 
-      ? `${trackArtist} - ${trackTitle || 'Трек'}` 
+    const description = trackArtist
+      ? `${trackArtist} - ${trackTitle || 'Трек'}`
       : `Донат за трек: ${trackUrl}`;
     
-    return createYukassaPayment(amount, trackUrl, description);
+    return createYukassaPayment(amount, trackUrl, description, donationId);
   }
 
   throw new Error(`Неизвестный провайдер: ${provider}`);

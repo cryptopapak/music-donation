@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
       amount,
       trackUrl,
       description,
-      email || donorName || undefined
+      email || donorName || undefined,
+      donation.id
     );
 
     if (!paymentResult.success) {

@@ -108,7 +108,7 @@ export async function createMockPayment(amount: number, trackUrl: string) {
 }
 
 // Основная функция создания платежа
-export async function createPayment(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string) {
+export async function createPayment(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string, donationId?: string) {
   const provider = process.env.PAYMENT_PROVIDER || 'mock';
 
   if (provider === 'mock') {
@@ -116,8 +116,8 @@ export async function createPayment(amount: number, trackUrl: string, trackTitle
   }
 
   if (provider === 'cloudpayments') {
-    const description = trackArtist 
-      ? `${trackArtist} - ${trackTitle || 'Трек'}` 
+    const description = trackArtist
+      ? `${trackArtist} - ${trackTitle || 'Трек'}`
       : `Донат за трек: ${trackUrl}`;
     
     return createCloudpaymentsPayment(amount, trackUrl, description);

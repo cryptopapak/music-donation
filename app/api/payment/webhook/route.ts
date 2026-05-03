@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 // Обработка успешного платежа
 async function handlePaymentSucceeded(payment: any) {
   const { id: paymentId, metadata, amount } = payment;
-  const { trackUrl } = metadata || {};
+  const { trackUrl, donationId } = metadata || {};
 
   console.log(`💰 Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
 
@@ -86,10 +86,10 @@ async function handlePaymentSucceeded(payment: any) {
   }
 
   // Добавляем трек в очередь
-  if (trackUrl) {
+  if (donationId) {
     try {
-      await addTrackToQueue(trackUrl);
-      console.log(`✅ Трек добавлен в очередь: ${trackUrl}`);
+      await addTrackToQueue(donationId);
+      console.log(`✅ Трек добавлен в очередь: donation_id=${donationId}`);
     } catch (queueError) {
       console.error('Error adding track to queue:', queueError);
     }

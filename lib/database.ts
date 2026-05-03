@@ -131,15 +131,28 @@ export interface Database {
 }
 
 // Добавление трека в очередь (используется для webhook)
-export async function addTrackToQueue(trackUrl: string) {
+export async function addTrackToQueue(donationId: string) {
   const { supabaseAdmin } = await import('@/lib/supabase');
   
+  // Получение доната
+  const { data: donation, error: donationError } = await supabaseAdmin
+    .from('donations')
+    .select('*')
+    .eq('id', donationId)
+    .eq('status', 'completed')
+    .single();
+
+  if (donationError) {
+    console.error('Donation select error:', donationError);
+    throw new Error('Failed to find donation');
+  }
+
   // Создание/получение трека
   const { data: track, error: trackError } = await supabaseAdmin
     .from('tracks')
     .upsert(
       {
-        url: trackUrl,
+        url: donation.track_url,
         provider: 'yookassa',
       },
       { onConflict: 'url' }
@@ -150,21 +163,6 @@ export async function addTrackToQueue(trackUrl: string) {
   if (trackError) {
     console.error('Track upsert error:', trackError);
     throw new Error('Failed to create track');
-  }
-
-  // Получение последней донатной записи для этого трека
-  const { data: donation, error: donationError } = await supabaseAdmin
-    .from('donations')
-    .select('*')
-    .eq('track_url', trackUrl)
-    .eq('status', 'completed')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (donationError) {
-    console.error('Donation select error:', donationError);
-    throw new Error('Failed to find donation');
   }
 
   // Добавление в очередь
