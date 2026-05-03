@@ -46,7 +46,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="mt-12 text-center text-slate-500 text-sm">
           <p>Минимальный донат: 10 ₽</p>
-          <p className="mt-1">Поддерживаем YouTube, Spotify, SoundCloud</p>
+          <p className="mt-1">Поддерживаем YouTube, SoundCloud</p>
           <div className="mt-4 space-x-4">
             <a href="/legal/offer" className="hover:text-slate-300 underline">Публичная оферта</a>
             <a href="/legal/privacy" className="hover:text-slate-300 underline">Политика конфиденциальности</a>

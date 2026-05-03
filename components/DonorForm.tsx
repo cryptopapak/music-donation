@@ -33,7 +33,7 @@ export function DonorForm({}: DonorFormProps) {
 
     const parsedTrack = parseTrackUrl(trackUrl);
     if (!parsedTrack) {
-      setError('Неверная ссылка. Поддерживаем YouTube, Spotify, SoundCloud');
+      setError('Неверная ссылка. Поддерживаем YouTube, SoundCloud');
       return;
     }
 
@@ -124,7 +124,7 @@ export function DonorForm({}: DonorFormProps) {
             placeholder="https://youtube.com/watch?v=..."
           />
           <p className="text-xs text-slate-500 mt-1">
-            Поддерживаем YouTube, Spotify, SoundCloud
+            Поддерживаем YouTube, SoundCloud
           </p>
         </div>
 

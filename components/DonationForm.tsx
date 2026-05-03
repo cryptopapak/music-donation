@@ -135,7 +135,7 @@ export function DonationForm({ onDonationSuccess, onQueueRefetch }: DonationForm
         {/* Ссылка на трек */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1">
-            Ссылка на трек (YouTube/Spotify)
+            Ссылка на трек (YouTube/SoundCloud)
           </label>
           <input
             type="text"
@@ -145,7 +145,7 @@ export function DonationForm({ onDonationSuccess, onQueueRefetch }: DonationForm
             placeholder="https://youtube.com/watch?v=..."
           />
           <p className="text-xs text-slate-500 mt-1">
-            Поддерживаем YouTube, Spotify, SoundCloud
+            Поддерживаем YouTube, SoundCloud
           </p>
         </div>
 

@@ -152,8 +152,6 @@ export async function addTrackToQueue(donationId: string) {
   let provider = 'unknown';
   if (donation.track_url.includes('youtube.com') || donation.track_url.includes('youtu.be')) {
     provider = 'youtube';
-  } else if (donation.track_url.includes('spotify.com')) {
-    provider = 'spotify';
   } else if (donation.track_url.includes('soundcloud.com')) {
     provider = 'soundcloud';
   }

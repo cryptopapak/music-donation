@@ -8,13 +8,6 @@ const YouTubeSchema = z.object({
   url: z.string().url(),
 });
 
-const SpotifySchema = z.object({
-  provider: z.literal('spotify'),
-  id: z.string(),
-  type: z.enum(['track', 'album', 'playlist']),
-  url: z.string().url(),
-});
-
 const SoundCloudSchema = z.object({
   provider: z.literal('soundcloud'),
   id: z.string(),
@@ -24,7 +17,7 @@ const SoundCloudSchema = z.object({
 
 // Общая схема для трека
 export const TrackSchema = z.object({
-  provider: z.enum(['youtube', 'spotify', 'soundcloud']),
+  provider: z.enum(['youtube', 'soundcloud']),
   id: z.string(),
   type: z.string(),
   url: z.string().url(),
@@ -58,33 +51,6 @@ export function parseYouTubeUrl(url: string): Track | null {
     };
   } catch (error) {
     console.error('YouTube parse error:', error);
-    return null;
-  }
-}
-
-// Парсер Spotify
-export function parseSpotifyUrl(url: string): Track | null {
-  try {
-    const regex = /spotify\.com\/(?:track|album|playlist)\/([a-zA-Z0-9]+)/;
-    const match = url.match(regex);
-    
-    if (!match) return null;
-    
-    const id = match[1];
-    const type = url.includes('/track/') ? 'track' : url.includes('/album/') ? 'album' : 'playlist';
-    
-    return {
-      provider: 'spotify',
-      id,
-      type,
-      url,
-      title: null,
-      artist: null,
-      thumbnailUrl: null,
-      duration: null,
-    };
-  } catch (error) {
-    console.error('Spotify parse error:', error);
     return null;
   }
 }
@@ -125,11 +91,6 @@ export function parseTrackUrl(url: string): Track | null {
     return parseYouTubeUrl(trimmedUrl);
   }
   
-  // Spotify
-  if (trimmedUrl.includes('spotify.com')) {
-    return parseSpotifyUrl(trimmedUrl);
-  }
-  
   // SoundCloud
   if (trimmedUrl.includes('soundcloud.com')) {
     return parseSoundCloudUrl(trimmedUrl);
@@ -147,14 +108,4 @@ export function normalizeTrack(track: Track): Track {
     artist: track.artist?.trim() || null,
     thumbnailUrl: track.thumbnailUrl?.trim() || null,
   };
-}
-
-// Валидация URL
-export function isValidTrackUrl(url: string): boolean {
-  return parseTrackUrl(url) !== null;
-}
-
-// Валидация суммы доната
-export function isValidDonationAmount(amount: number): boolean {
-  return amount >= 10 && amount <= 100000;
 }

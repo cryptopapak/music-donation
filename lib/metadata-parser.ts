@@ -7,13 +7,6 @@ interface YouTubeMetadata {
   duration: number | null;
 }
 
-interface SpotifyMetadata {
-  title: string;
-  artist: string;
-  thumbnail_url: string | null;
-  duration: number | null;
-}
-
 interface SoundCloudMetadata {
   title: string;
   artist: string;
@@ -59,80 +52,6 @@ export async function fetchYouTubeMetadata(videoId: string): Promise<YouTubeMeta
     };
   } catch (error) {
     console.error('YouTube metadata fetch error:', error);
-    throw error;
-  }
-}
-
-/**
- * Извлекает track ID из Spotify URL
- */
-export function parseSpotifyUrl(url: string): string | null {
-  try {
-    const regex = /spotify\.com\/track\/([a-zA-Z0-9]+)/;
-    const match = url.match(regex);
-    return match ? match[1] : null;
-  } catch (error) {
-    console.error('Spotify URL parse error:', error);
-    return null;
-  }
-}
-
-/**
- * Получает метаданные из Spotify API
- * Требует SPOTIFY_CLIENT_ID и SPOTIFY_CLIENT_SECRET
- */
-export async function fetchSpotifyMetadata(trackId: string): Promise<SpotifyMetadata> {
-  try {
-    const clientId = process.env.SPOTIFY_CLIENT_ID;
-    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-    
-    if (!clientId || !clientSecret) {
-      throw new Error('SPOTIFY_CLIENT_ID и SPOTIFY_CLIENT_SECRET должны быть заданы');
-    }
-    
-    // Получаем access token
-    const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-      },
-      body: 'grant_type=client_credentials'
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new Error(`Spotify token request failed: ${tokenResponse.status}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
-    
-    // Получаем метаданные трека
-    const trackResponse = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    });
-    
-    if (!trackResponse.ok) {
-      throw new Error(`Spotify track request failed: ${trackResponse.status}`);
-    }
-    
-    const trackData = await trackResponse.json();
-    
-    // Получаем лучшее изображение из альбома
-    const thumbnailUrl = trackData.album.images.length > 0 
-      ? trackData.album.images[0].url 
-      : null;
-    
-    return {
-      title: trackData.name,
-      artist: trackData.artists.map((a: any) => a.name).join(', '),
-      thumbnail_url: thumbnailUrl,
-      duration: trackData.duration_ms > 0 ? trackData.duration_ms / 1000 : null
-    };
-  } catch (error) {
-    console.error('Spotify metadata fetch error:', error);
     throw error;
   }
 }
@@ -198,12 +117,6 @@ export async function fetchMetadataFromUrl(url: string) {
     const videoId = parseYouTubeUrl(url);
     if (!videoId) throw new Error('Не удалось извлечь video ID из YouTube URL');
     return await fetchYouTubeMetadata(videoId);
-  }
-  
-  if (url.includes('spotify.com')) {
-    const trackId = parseSpotifyUrl(url);
-    if (!trackId) throw new Error('Не удалось извлечь track ID из Spotify URL');
-    return await fetchSpotifyMetadata(trackId);
   }
   
   if (url.includes('soundcloud.com')) {

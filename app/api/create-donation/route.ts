@@ -7,7 +7,7 @@ import {
   getOrCreateTrack,
   addToQueue
 } from '@/lib/storage';
-import { parseTrackUrl, isValidDonationAmount } from '@/lib/parser';
+import { parseTrackUrl } from '@/lib/parser';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isValidDonationAmount(amount)) {
+    // Валидация суммы
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount < 10 || numericAmount > 100000) {
       return NextResponse.json(
         { error: 'Amount must be between 10 and 100000 rubles' },
         { status: 400 }
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
     const parsedTrack = parseTrackUrl(trackUrl);
     if (!parsedTrack) {
       return NextResponse.json(
-        { error: 'Invalid track URL. Supported: YouTube, Spotify, SoundCloud' },
+        { error: 'Invalid track URL. Supported: YouTube, SoundCloud' },
         { status: 400 }
       );
     }

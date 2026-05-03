@@ -102,10 +102,6 @@ export function Player({}: PlayerProps) {
     }
   }, [currentTrack, playerReady]);
 
-  const getSpotifyEmbedUrl = (id: string) => {
-    return `https://open.spotify.com/embed/track/${id}?utm_source=generator&theme=0`;
-  };
-
   const getSoundCloudEmbedUrl = (id: string) => {
     return `https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/${id}&auto_play=true&visual=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=true&color=%23ff5500`;
   };
@@ -120,18 +116,6 @@ export function Player({}: PlayerProps) {
             ref={playerContainerRef}
             className="aspect-video rounded-lg overflow-hidden bg-black"
           />
-        );
-      case 'spotify':
-        return (
-          <div className="aspect-video rounded-lg overflow-hidden">
-            <iframe
-              src={getSpotifyEmbedUrl(currentTrack.id)}
-              className="w-full h-full"
-              allow="autoplay; encrypted-media; picture-in-picture"
-              allowFullScreen
-              title="Spotify Player"
-            />
-          </div>
         );
       case 'soundcloud':
         return (

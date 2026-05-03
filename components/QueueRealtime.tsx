@@ -31,12 +31,10 @@ export function QueueRealtime() {
     switch (provider) {
       case 'youtube':
         return '▶️';
-      case 'spotify':
-        return '🎵';
       case 'soundcloud':
         return '🔊';
       default:
-        return '🎵';
+        return '▶️';
     }
   };
 

@@ -94,12 +94,10 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
     switch (provider) {
       case 'youtube':
         return '▶️';
-      case 'spotify':
-        return '🎵';
       case 'soundcloud':
         return '🔊';
       default:
-        return '🎵';
+        return '▶️';
     }
   };
 
