@@ -57,7 +57,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { GET } = await import('./route');
+    const { GET } = await import('@/app/api/queue/current/route');
     const response = await GET(request);
 
     expect(response.status).toBe(200);
@@ -81,7 +81,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { GET } = await import('./route');
+    const { GET } = await import('@/app/api/queue/current/route');
     const response = await GET(request);
 
     expect(response.status).toBe(200);
@@ -115,7 +115,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { GET } = await import('./route');
+    const { GET } = await import('@/app/api/queue/current/route');
     const response = await GET(request);
 
     expect(response.status).toBe(200);
@@ -130,7 +130,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { POST } = await import('./route');
+    const { POST } = await import('@/app/api/queue/current/route');
     const response = await POST(request);
 
     expect(response.status).toBe(405);
@@ -142,7 +142,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { PUT } = await import('./route');
+    const { PUT } = await import('@/app/api/queue/current/route');
     const response = await PUT(request);
 
     expect(response.status).toBe(405);
@@ -154,7 +154,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { DELETE } = await import('./route');
+    const { DELETE } = await import('@/app/api/queue/current/route');
     const response = await DELETE(request);
 
     expect(response.status).toBe(405);
@@ -166,7 +166,7 @@ describe('GET /api/queue/current', () => {
       headers: { 'user-agent': 'test-agent' },
     });
 
-    const { PATCH } = await import('./route');
+    const { PATCH } = await import('@/app/api/queue/current/route');
     const response = await PATCH(request);
 
     expect(response.status).toBe(405);
