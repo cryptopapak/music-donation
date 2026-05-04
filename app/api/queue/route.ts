@@ -91,6 +91,8 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
+    console.log(`[QUEUE DEBUG] Found ${queueItems?.length || 0} queue items with status 'pending'`);
+
     if (error) {
       console.error('Queue fetch error:', error);
       return NextResponse.json(
@@ -112,6 +114,8 @@ export async function GET(request: NextRequest) {
         created_at: item.created_at,
         donation: item.donation,
       }));
+
+    console.log(`[QUEUE DEBUG] Filtered tracks: ${tracks.length} items`);
 
     // Возвращаем все треки из очереди без фильтрации по метаданным
     const filteredTracks = tracks;

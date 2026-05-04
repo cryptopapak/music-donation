@@ -41,7 +41,13 @@ export function Player({}: PlayerProps) {
   useEffect(() => {
     const loadCurrentTrack = async () => {
       try {
-        const response = await fetch('/api/queue/current');
+        const response = await fetch('/api/queue/current', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+          },
+        });
         const data = await response.json();
         
         if (data.success && data.currentTrack) {

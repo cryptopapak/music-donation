@@ -57,9 +57,10 @@ interface QueueResponse {
 interface QueueListProps {
   className?: string;
   onRefetch?: () => void;
+  refetchKey?: number;
 }
 
-export function QueueList({ className = '', onRefetch }: QueueListProps) {
+export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
   console.log('🎵 QueueList component rendered');
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -71,7 +72,13 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
     try {
       setIsLoading(true);
       console.log('🔍 Загрузка очереди: offset=', newOffset, 'limit=', newLimit);
-      const response = await fetch(`/api/queue?limit=${newLimit}&offset=${newOffset}`);
+      const response = await fetch(`/api/queue?limit=${newLimit}&offset=${newOffset}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       const data: QueueResponse = await response.json();
       console.log('📦 Ответ от API:', data);
 
@@ -95,7 +102,7 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
   useEffect(() => {
     console.log('🔄 QueueList useEffect triggered');
     loadQueue();
-  }, []);
+  }, [refetchKey]);
 
   const refetch = async () => {
     await loadQueue(offset, limit);
