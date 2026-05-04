@@ -20,7 +20,7 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     donationId: donationId || ''
   };
 
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payment/webhook`;
+  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://music-donation.vercel.app'}/api/payment/webhook`;
 
   const paymentData = {
     amount: {
@@ -29,7 +29,7 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     },
     confirmation: {
       type: 'redirect',
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success`,
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://music-donation.vercel.app'}/payment/success`,
     },
     description: description,
     metadata,
