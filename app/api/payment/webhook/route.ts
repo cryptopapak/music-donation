@@ -28,8 +28,12 @@ function verifyHmac(requestBody: string, signature: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('💰 [WEBHOOK] === НОВЫЙ ЗАПРОС ===');
     const rawBody = await request.text();
+    console.log('💰 [WEBHOOK] Raw body received:', rawBody.substring(0, 500) + (rawBody.length > 500 ? '...' : ''));
+    
     const signature = request.headers.get('yookassa-signature') || '';
+    console.log('💰 [WEBHOOK] HMAC signature:', signature || 'MISSING');
     
     // Проверка HMAC подписи (отключена для тестирования)
     /*
@@ -44,11 +48,18 @@ export async function POST(request: NextRequest) {
     }
     */
 
-    const body = JSON.parse(rawBody);
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (parseError) {
+      console.error('❌ [WEBHOOK] Ошибка парсинга JSON:', parseError);
+      console.error('❌ [WEBHOOK] Raw body:', rawBody);
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+    
     const { event, object } = body;
-
-    console.log('💰 [YUKASSA WEBHOOK] Получено событие:', event);
-    console.log('💰 [YUKASSA WEBHOOK] Данные платежа:', JSON.stringify(object, null, 2));
+    console.log('💰 [WEBHOOK] Event:', event);
+    console.log('💰 [WEBHOOK] Object:', JSON.stringify(object, null, 2));
 
     // Обработка события payment.succeeded
     if (event === 'payment.succeeded') {
@@ -67,14 +78,23 @@ export async function POST(request: NextRequest) {
 
 // Обработка успешного платежа
 async function handlePaymentSucceeded(payment: any) {
+  console.log('💰 [WEBHOOK] === ОБРАБОТКА ПЛАТЕЖА ===');
   const { id: paymentId, metadata, amount } = payment;
   const { trackUrl, donationId } = metadata || {};
 
-  console.log(`💰 [YUKASSA WEBHOOK] Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
-  console.log(`💰 [YUKASSA WEBHOOK] Metadata:`, metadata);
-  console.log(`💰 [YUKASSA WEBHOOK] donationId из metadata:`, donationId);
+  console.log(`💰 [WEBHOOK] Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
+  console.log(`💰 [WEBHOOK] Metadata:`, JSON.stringify(metadata, null, 2));
+  console.log(`💰 [WEBHOOK] donationId из metadata:`, donationId || 'MISSING');
+
+  // Проверка наличия donationId
+  if (!donationId || donationId.trim() === '') {
+    console.error('❌ [WEBHOOK] donationId отсутствует в metadata!');
+    console.error('❌ [WEBHOOK] Metadata целиком:', JSON.stringify(metadata, null, 2));
+    return;
+  }
 
   // Обновляем статус доната на completed
+  console.log(`💰 [WEBHOOK] Обновление доната с payment_id=${paymentId}`);
   const { error: donationError } = await supabaseAdmin
     .from('donations')
     .update({
@@ -85,21 +105,22 @@ async function handlePaymentSucceeded(payment: any) {
     .eq('status', 'processing');
 
   if (donationError) {
-    console.error('❌ [YUKASSA WEBHOOK] Donation update error:', donationError);
+    console.error('❌ [WEBHOOK] Donation update error:', donationError);
+    console.error('❌ [WEBHOOK] Данные доната:', { paymentId, status: 'processing' });
   } else {
-    console.log(`✅ [YUKASSA WEBHOOK] Статус доната обновлен на completed`);
+    console.log(`✅ [WEBHOOK] Статус доната обновлен на completed`);
   }
 
   // Добавляем трек в очередь
-  if (donationId) {
-    try {
-      console.log(`💰 [YUKASSA WEBHOOK] Вызов addTrackToQueue(${donationId})`);
-      await addTrackToQueue(donationId);
-      console.log(`✅ [YUKASSA WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);
-    } catch (queueError) {
-      console.error('❌ [YUKASSA WEBHOOK] Error adding track to queue:', queueError);
-    }
-  } else {
-    console.warn('⚠️ [YUKASSA WEBHOOK] donationId отсутствует в metadata');
+  console.log(`💰 [WEBHOOK] Вызов addTrackToQueue(${donationId})`);
+  try {
+    await addTrackToQueue(donationId);
+    console.log(`✅ [WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);
+  } catch (queueError) {
+    console.error(`❌ [WEBHOOK] Ошибка добавления в очередь:`, queueError);
+    console.error(`❌ [WEBHOOK] donationId: ${donationId}`);
+    console.error(`❌ [WEBHOOK] paymentId: ${paymentId}`);
+    console.error(`❌ [WEBHOOK] Данные платежа:`, JSON.stringify(payment, null, 2));
+    // Не возвращаем ошибку ЮKassa, чтобы не было повторных отправок
   }
 }

@@ -15,10 +15,10 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     throw new Error('ЮKassa не настроена');
   }
 
-  const metadata: Record<string, string> = { trackUrl };
-  if (donationId) {
-    metadata.donationId = donationId;
-  }
+  const metadata: Record<string, string> = {
+    trackUrl,
+    donationId: donationId || ''
+  };
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payment/webhook`;
 

@@ -207,7 +207,10 @@ export function isTrackTooLong(duration: number | null, maxDuration: number = MA
 
 // Добавление трека в очередь (используется для webhook)
 export async function addTrackToQueue(donationId: string) {
+  console.log('💰 [ADD TO QUEUE] === НОВЫЙ ЗАПРОС ===');
+  console.log('💰 [ADD TO QUEUE] donationId:', donationId);
   console.log(`💰 [ADD TO QUEUE] Начало добавления трека в очередь для donation_id=${donationId}`);
+  
   const { supabaseAdmin } = await import('@/lib/supabase');
   const { fetchMetadataFromUrl } = await import('@/lib/metadata-parser');
   
@@ -223,12 +226,16 @@ export async function addTrackToQueue(donationId: string) {
   if (donationError) {
     console.error(`❌ [ADD TO QUEUE] Donation select error:`, donationError);
     console.error(`❌ [ADD TO QUEUE] Донат с id=${donationId} не найден или статус не 'completed'`);
+    console.error(`❌ [ADD TO QUEUE] Supabase URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
+    console.error(`❌ [ADD TO QUEUE] SUPABASE_SERVICE_KEY:`, process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'MISSING');
     throw new Error('Failed to find donation');
   }
   console.log(`✅ [ADD TO QUEUE] Донат найден: id=${donation.id}, amount=${donation.amount}, track=${donation.track_url}`);
 
   // Определение провайдера из URL
+  console.log(`💰 [ADD TO QUEUE] Определение провайдера для URL: ${donation.track_url}`);
   const provider = getProviderFromUrl(donation.track_url);
+  console.log(`💰 [ADD TO QUEUE] Определен провайдер: ${provider}`);
 
   // Создание/получение трека
   console.log(`💰 [ADD TO QUEUE] Создание/получение трека для URL: ${donation.track_url}`);
@@ -246,13 +253,16 @@ export async function addTrackToQueue(donationId: string) {
 
   if (trackError) {
     console.error(`❌ [ADD TO QUEUE] Track upsert error:`, trackError);
+    console.error(`❌ [ADD TO QUEUE] Данные трека:`, { url: donation.track_url, provider });
     throw new Error('Failed to create track');
   }
   console.log(`✅ [ADD TO QUEUE] Трек создан/найден: id=${track.id}`);
 
   // Попытка получить метаданные
   try {
+    console.log(`💰 [ADD TO QUEUE] Получение метаданных для URL: ${donation.track_url}`);
     const metadata = await fetchMetadataFromUrl(donation.track_url);
+    console.log(`💰 [ADD TO QUEUE] Метаданные получены:`, metadata);
     
     // Обновление трека метаданными
     const { error: updateError } = await supabaseAdmin
@@ -293,11 +303,25 @@ export async function addTrackToQueue(donationId: string) {
     .eq('id', donationId)
     .single();
 
+  if (donationDataError) {
+    console.error(`❌ [ADD TO QUEUE] Donation amount error:`, donationDataError);
+  }
+  
   const priorityScore = donationData ? Math.floor(donationData.amount / 100) : 0;
   console.log(`💰 [ADD TO QUEUE] priorityScore: ${priorityScore}`);
 
   // Добавление в очередь
+  console.log('💰 [ADD TO QUEUE] Статус:', 'pending');
   console.log(`💰 [ADD TO QUEUE] Добавление в очередь: track_id=${track.id}, donation_id=${donation.id}`);
+  console.log(`💰 [ADD TO QUEUE] Данные для вставки:`, {
+    track_id: track.id,
+    donation_id: donation.id,
+    position: 1,
+    status: 'pending',
+    priority_score: priorityScore,
+    votes_count: 0,
+  });
+  
   const { error: queueError } = await supabaseAdmin
     .from('queue')
     .insert({
@@ -311,6 +335,16 @@ export async function addTrackToQueue(donationId: string) {
 
   if (queueError) {
     console.error(`❌ [ADD TO QUEUE] Queue insert error:`, queueError);
+    console.error(`❌ [ADD TO QUEUE] Данные для вставки:`, {
+      track_id: track.id,
+      donation_id: donation.id,
+      position: 1,
+      status: 'pending',
+      priority_score: priorityScore,
+      votes_count: 0,
+    });
+    console.error(`❌ [ADD TO QUEUE] Supabase URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
+    console.error(`❌ [ADD TO QUEUE] SUPABASE_SERVICE_KEY:`, process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'MISSING');
     throw new Error('Failed to add to queue');
   }
   console.log(`✅ [ADD TO QUEUE] Трек успешно добавлен в очередь!`);

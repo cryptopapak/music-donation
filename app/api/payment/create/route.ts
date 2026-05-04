@@ -97,14 +97,12 @@ export async function POST(request: NextRequest) {
     }
     console.log(`✅ [CREATE PAYMENT] Донат создан: id=${donation.id}, amount=${amount}`);
 
-    // Генерация trackUrl для платежа (используем URL для возврата)
-    const trackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?donation_id=${donation.id}`;
-
     // Создание платежа через ЮKassa
     // createPayment(amount, trackUrl, trackTitle?, trackArtist?, donationId?)
+    // URL трека передается как description (он содержит URL)
     const paymentResult = await createPayment(
       amount,
-      trackUrl,
+      description,
       metadata?.title || donorName || null,
       metadata?.artist || email || null,
       donation.id
