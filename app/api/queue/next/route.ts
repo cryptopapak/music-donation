@@ -79,7 +79,16 @@ async function getNextTrackFromQueue() {
  */
 async function startPlayingTrack(queueId: string) {
   try {
-    // Обновляем статус трека на 'playing'
+    // 1. Останавливаем всё, что сейчас играет
+    await supabaseAdmin
+      .from('queue')
+      .update({
+        status: 'played',
+        ended_at: new Date().toISOString()
+      })
+      .eq('status', 'playing');
+
+    // 2. Запускаем новый трек
     const { error } = await supabaseAdmin
       .from('queue')
       .update({

@@ -105,6 +105,16 @@ export function getQueue() {
 }
 
 export function updateQueueStatus(queueId: string, status: 'playing' | 'played' | 'skipped'): QueueItem | null {
+  // Если статус меняется на 'playing', сначала останавливаем всё, что сейчас играет
+  if (status === 'playing') {
+    queue.forEach((q) => {
+      if (q.status === 'playing') {
+        q.status = 'played';
+        q.endedAt = new Date().toISOString();
+      }
+    });
+  }
+  
   const item = queue.find(q => q.id === queueId);
   if (!item) return null;
   
