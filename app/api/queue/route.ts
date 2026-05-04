@@ -61,14 +61,16 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0');
 
     // 🔍 ЛОГИРОВАНИЕ ПЕРЕД ЗАПРОСОМ
-    console.log('🔍 [DB QUERY] Начинаю поиск треков в очереди...');
-    console.log('🔍 [DB QUERY] Статус для поиска: pending');
-    console.log('🔍 [DB QUERY] Таблица: queue');
-    console.log('🔍 [DB QUERY] JOIN с tracks: да');
-    console.log('🔍 [DB QUERY] JOIN с donations: да');
-    console.log('🔍 [DB QUERY] Пагинация: offset=' + offset + ', limit=' + limit);
+    console.log('🔍 [SQL] Запрос к таблице queue...');
+    console.log('🔍 [SQL] Фильтр по статусу: pending');
+    console.log('🔍 [SQL] Текущее время:', new Date().toISOString());
+    console.log('🔍 [SQL] Пагинация: offset=' + offset + ', limit=' + limit);
+    console.log('🔍 [SQL] JOIN с tracks: INNER (фильтрует если track_id не найден)');
+    console.log('🔍 [SQL] JOIN с donations: INNER (фильтрует если donation_id не найден)');
 
     // Получение очереди из таблицы queue с данными из tracks и donations
+    // Используем !inner чтобы явно указать INNER JOIN (по умолчанию Supabase использует INNER JOIN)
+    // Если нужно LEFT JOIN, используй !left
     const { data: queueItems, error } = await supabaseAdmin
       .from('queue')
       .select(`
@@ -78,7 +80,9 @@ export async function GET(request: NextRequest) {
         priority_score,
         votes_count,
         created_at,
-        tracks (
+        track_id,
+        donation_id,
+        tracks!inner (
           id,
           url,
           provider,
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
           thumbnail_url,
           duration
         ),
-        donation:donations (
+        donation:donations!inner (
           id,
           amount,
           donor_name,
@@ -98,11 +102,18 @@ export async function GET(request: NextRequest) {
       .order('priority_score', { ascending: false })
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
+      
+    console.log('🔍 [SQL] track_id и donation_id из queue:', queueItems?.map((q: any) => ({ id: q.id, track_id: q.track_id, donation_id: q.donation_id })));
 
     // 🔍 ЛОГИРОВАНИЕ ПОСЛЕ ЗАПРОСА
-    console.log('🔍 [DB QUERY] Найдено записей в БД:', queueItems?.length);
-    if (error) console.error('❌ [DB QUERY] Ошибка Supabase:', error);
-    console.log('🔍 [DB QUERY] queueItems:', JSON.stringify(queueItems, null, 2));
+    console.log('📊 [SQL] Найдено записей:', queueItems?.length || 0);
+    if (error) {
+      console.error('❌ [SQL] Ошибка Supabase:', JSON.stringify(error, null, 2));
+    }
+    if (queueItems && queueItems.length > 0) {
+      console.log('📦 [SQL] Первая запись:', JSON.stringify(queueItems[0], null, 2));
+    }
+    console.log('🔍 [SQL] queueItems raw:', JSON.stringify(queueItems, null, 2));
 
     if (error) {
       console.error('Queue fetch error:', error);
