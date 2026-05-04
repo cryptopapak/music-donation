@@ -51,7 +51,7 @@ interface TrackWithQueueData extends TrackData {
  * Получение очереди треков с пагинацией
  * Возвращает треки из таблицы queue с данными из tracks и donations
  * Сортировка: по priority_score (descending) для приоритетной очереди
- * Фильтрация: только pending треки без битых данных
+ * Фильтрация: только треки со статусом 'pending'
  */
 export async function GET(request: NextRequest) {
   try {
@@ -113,13 +113,8 @@ export async function GET(request: NextRequest) {
         donation: item.donation,
       }));
 
-    // Фильтрация треков без метаданных (исключаем треки с title=NULL, пустым title и provider='yookassa')
-    const filteredTracks = tracks.filter(
-      (track) =>
-        track.title !== null &&
-        track.title !== '' &&
-        track.provider !== 'yookassa'
-    );
+    // Возвращаем все треки из очереди без фильтрации по метаданным
+    const filteredTracks = tracks;
 
     return NextResponse.json(
       {
