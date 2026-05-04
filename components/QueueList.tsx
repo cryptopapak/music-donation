@@ -9,26 +9,41 @@ interface Track {
   title?: string | null;
   artist?: string | null;
   thumbnail_url?: string | null;
-}
-
-interface Donation {
-  id: string;
-  amount: number;
+  duration?: number | null;
+  queueId: string;
+  status: string;
+  position: number;
+  priority_score: number;
+  votes_count: number;
   created_at: string;
+  donation: {
+    id: string;
+    amount: number;
+    donor_name?: string | null;
+    created_at: string;
+  } | null;
 }
 
 interface QueueItem {
   id: string;
-  position: number;
+  url: string;
+  provider: string;
+  title?: string | null;
+  artist?: string | null;
+  thumbnail_url?: string | null;
+  duration?: number | null;
+  queueId: string;
   status: string;
-  queueId?: string;
-  started_at?: string | null;
-  ended_at?: string | null;
+  position: number;
+  priority_score: number;
+  votes_count: number;
   created_at: string;
-  priority_score?: number;
-  votes_count?: number;
-  track?: Track | null;
-  donation: Donation | null;
+  donation: {
+    id: string;
+    amount: number;
+    donor_name?: string | null;
+    created_at: string;
+  } | null;
 }
 
 interface QueueResponse {
@@ -183,13 +198,13 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
               {/* Информация о треке */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{getProviderIcon(item.track?.provider || '')}</span>
+                  <span className="text-lg">{getProviderIcon(item.provider || '')}</span>
                   <div>
                     <p className="font-medium text-white truncate">
-                      {item.track?.artist || 'Неизвестный исполнитель'}
+                      {item.artist || 'Неизвестный исполнитель'}
                     </p>
                     <p className="text-sm text-slate-400 truncate">
-                      {item.track?.title || 'Неизвестный трек'}
+                      {item.title || 'Неизвестный трек'}
                     </p>
                   </div>
                 </div>
