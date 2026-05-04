@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
         track_id,
         priority_score,
         votes_count,
+        donation_id,
         tracks (
           id,
           url,
@@ -22,6 +23,12 @@ export async function GET(request: NextRequest) {
           artist,
           thumbnail_url,
           duration
+        ),
+        donations (
+          id,
+          user_id,
+          amount,
+          created_at
         )
       `)
       .eq('status', 'playing')
@@ -36,8 +43,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         currentTrack: null,
+        donorInfo: null,
       });
     }
+
+    // Извлекаем информацию о донатере
+    const donorInfo = queueItem.donations && Array.isArray(queueItem.donations) && queueItem.donations.length > 0
+      ? {
+          name: queueItem.donations[0].user_id ? 'Аноним' : null, // В реальном приложении можно получить имя пользователя
+          amount: Number(queueItem.donations[0].amount),
+        }
+      : null;
 
     return NextResponse.json({
       success: true,
@@ -46,6 +62,7 @@ export async function GET(request: NextRequest) {
         priority_score: queueItem.priority_score,
         votes_count: queueItem.votes_count,
       },
+      donorInfo,
     });
   } catch (error) {
     console.error('Current track error:', error);
