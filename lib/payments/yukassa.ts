@@ -51,10 +51,17 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
       throw new Error(data.message || 'Ошибка создания платежа');
     }
 
+    const confirmationUrl = data.confirmation?.confirmation_url;
+    
+    if (!confirmationUrl) {
+      console.error('❌ ЮKassa не вернула confirmation_url:', data);
+    }
+    
     return {
       success: true,
       paymentId: data.id,
-      confirmationUrl: data.confirmation.confirmation_url,
+      confirmationUrl: confirmationUrl || null,
+      donationId: donationId || null,
     };
   } catch (error) {
     console.error('Yukassa payment error:', error);
@@ -101,6 +108,7 @@ export async function createMockPayment(amount: number, trackUrl: string) {
     success: true,
     paymentId: `mock-${Date.now()}`,
     confirmationUrl: null,
+    donationId: null,
   };
 }
 
