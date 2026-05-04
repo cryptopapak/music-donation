@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
         id,
         status,
         track_id,
+        priority_score,
+        votes_count,
         tracks (
           id,
           url,
@@ -30,9 +32,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch current track' }, { status: 500 });
     }
 
+    if (!queueItem?.tracks) {
+      return NextResponse.json({
+        success: true,
+        currentTrack: null,
+      });
+    }
+
     return NextResponse.json({
       success: true,
-      currentTrack: queueItem?.tracks || null,
+      currentTrack: {
+        ...queueItem.tracks,
+        priority_score: queueItem.priority_score,
+        votes_count: queueItem.votes_count,
+      },
     });
   } catch (error) {
     console.error('Current track error:', error);

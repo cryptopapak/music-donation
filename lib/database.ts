@@ -89,6 +89,8 @@ export interface Database {
           donation_id: string;
           position: number;
           status: 'pending' | 'playing' | 'played' | 'skipped';
+          priority_score: number;
+          votes_count: number;
           started_at: string | null;
           ended_at: string | null;
           created_at: string;
@@ -100,6 +102,8 @@ export interface Database {
           donation_id: string;
           position: number;
           status?: 'pending' | 'playing' | 'played' | 'skipped';
+          priority_score?: number;
+          votes_count?: number;
           started_at?: string | null;
           ended_at?: string | null;
           created_at?: string;
@@ -111,6 +115,8 @@ export interface Database {
           donation_id?: string;
           position?: number;
           status?: 'pending' | 'playing' | 'played' | 'skipped';
+          priority_score?: number;
+          votes_count?: number;
           started_at?: string | null;
           ended_at?: string | null;
           created_at?: string;
@@ -128,6 +134,62 @@ export interface Database {
       [_ in never]: never;
     };
   };
+}
+
+// Константы для ограничений
+export const MAX_TRACK_DURATION = 600; // 10 минут в секундах
+
+// Получение blacklist из .env (разделенные запятыми)
+const ENV_BLACKLIST_ARTISTS = process.env.BLACKLIST_ARTISTS
+  ? process.env.BLACKLIST_ARTISTS.split(',').map(s => s.trim())
+  : [];
+const ENV_BLACKLIST_KEYWORDS = process.env.BLACKLIST_KEYWORDS
+  ? process.env.BLACKLIST_KEYWORDS.split(',').map(s => s.trim())
+  : [];
+
+// Используем env переменные, если они заданы, иначе дефолтные значения
+export const DEFAULT_BLACKLIST_ARTISTS = ENV_BLACKLIST_ARTISTS.length > 0 ? ENV_BLACKLIST_ARTISTS : ['nsfw', 'explicit'];
+export const DEFAULT_BLACKLIST_KEYWORDS = ENV_BLACKLIST_KEYWORDS.length > 0 ? ENV_BLACKLIST_KEYWORDS : ['nsfw', 'explicit'];
+
+/**
+ * Проверяет, есть ли трек в blacklist стримера
+ */
+export function isTrackInBlacklist(
+  title: string | null,
+  artist: string | null,
+  blacklistArtists: string[] = DEFAULT_BLACKLIST_ARTISTS,
+  blacklistKeywords: string[] = DEFAULT_BLACKLIST_KEYWORDS
+): boolean {
+  const titleLower = title?.toLowerCase() || '';
+  const artistLower = artist?.toLowerCase() || '';
+  const combined = `${titleLower} ${artistLower}`;
+
+  // Проверка артистов в blacklist
+  for (const blockedArtist of blacklistArtists) {
+    if (artistLower.includes(blockedArtist.toLowerCase())) {
+      return true;
+    }
+  }
+
+  // Проверка ключевых слов в blacklist
+  for (const keyword of blacklistKeywords) {
+    if (combined.includes(keyword.toLowerCase())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Проверяет, превышает ли трек максимальную длительность
+ */
+export function isTrackTooLong(duration: number | null, maxDuration: number = MAX_TRACK_DURATION): boolean {
+  if (duration === null || duration === undefined) {
+    // Если длительность неизвестна, считаем, что не превышает (проверка при воспроизведении)
+    return false;
+  }
+  return duration > maxDuration;
 }
 
 // Добавление трека в очередь (используется для webhook)
@@ -189,10 +251,31 @@ export async function addTrackToQueue(donationId: string) {
     if (updateError) {
       console.error('Track metadata update error:', updateError);
     }
+
+    // Проверка blacklist
+    if (isTrackInBlacklist(metadata.title, metadata.artist)) {
+      console.warn(`❌ Трек "${metadata.title}" от "${metadata.artist}" в blacklist`);
+      throw new Error('Трек находится в blacklist');
+    }
+
+    // Проверка длительности
+    if (isTrackTooLong(metadata.duration)) {
+      console.warn(`❌ Трек "${metadata.title}" слишком длинный: ${metadata.duration} сек`);
+      throw new Error(`Максимальная длительность трека: ${MAX_TRACK_DURATION / 60} минут`);
+    }
   } catch (metadataError) {
     console.error('Failed to fetch metadata for track:', metadataError);
     // Не прерываем выполнение, если не удалось получить метаданные
   }
+
+  // Получаем сумму доната для расчета приоритета
+  const { data: donationData, error: donationDataError } = await supabaseAdmin
+    .from('donations')
+    .select('amount')
+    .eq('id', donationId)
+    .single();
+
+  const priorityScore = donationData ? Math.floor(donationData.amount / 100) : 0;
 
   // Добавление в очередь
   const { error: queueError } = await supabaseAdmin
@@ -202,6 +285,8 @@ export async function addTrackToQueue(donationId: string) {
       donation_id: donation.id,
       position: 1,
       status: 'pending',
+      priority_score: priorityScore,
+      votes_count: 0,
     });
 
   if (queueError) {

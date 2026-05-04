@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
 import { createPayment } from '@/lib/payments/yukassa';
+import { fetchMetadataFromUrl } from '@/lib/metadata-parser';
+import { isTrackInBlacklist, isTrackTooLong, MAX_TRACK_DURATION } from '@/lib/database';
 
 // Схема валидации для создания платежа
 const PaymentCreateSchema = z.object({
@@ -30,14 +32,55 @@ export async function POST(request: NextRequest) {
 
     const { amount, description, donorName, email } = validation.data;
 
+    // Определение провайдера из URL
+    const provider = description.includes('youtube.com') || description.includes('youtu.be')
+      ? 'youtube'
+      : description.includes('soundcloud.com')
+      ? 'soundcloud'
+      : null;
+
+    if (!provider) {
+      return NextResponse.json(
+        { error: 'Неверный URL трека. Поддерживаются только YouTube и SoundCloud' },
+        { status: 400 }
+      );
+    }
+
+    // Получение метаданных для проверки
+    let metadata: any = null;
+    try {
+      metadata = await fetchMetadataFromUrl(description);
+
+      // Проверка blacklist
+      if (isTrackInBlacklist(metadata.title, metadata.artist)) {
+        console.warn(`❌ Трек "${metadata.title}" от "${metadata.artist}" в blacklist`);
+        return NextResponse.json(
+          { error: 'Трек находится в blacklist' },
+          { status: 403 }
+        );
+      }
+
+      // Проверка длительности
+      if (isTrackTooLong(metadata.duration)) {
+        console.warn(`❌ Трек "${metadata.title}" слишком длинный: ${metadata.duration} сек`);
+        return NextResponse.json(
+          { error: `Максимальная длительность трека: ${MAX_TRACK_DURATION / 60} минут` },
+          { status: 403 }
+        );
+      }
+    } catch (metadataError) {
+      console.error('Failed to fetch metadata for track:', metadataError);
+      // Не прерываем выполнение, если не удалось получить метаданные
+    }
+
     // Создание доната в Supabase (статус processing - ожидает оплаты)
     const { data: donation, error: donationError } = await supabaseAdmin
       .from('donations')
       .insert({
         amount,
-        track_url: description, // Используем description как track_url для упрощения
-        track_title: donorName || null,
-        track_artist: email || null,
+        track_url: description,
+        track_title: metadata?.title || donorName || null,
+        track_artist: metadata?.artist || email || null,
         provider: process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yookassa' : 'mock',
         status: 'processing',
       })

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
+import { parseTrackUrl } from '@/lib/parser';
+import { fetchMetadataFromUrl } from '@/lib/metadata-parser';
+import { isTrackInBlacklist, isTrackTooLong, MAX_TRACK_DURATION, DEFAULT_BLACKLIST_ARTISTS, DEFAULT_BLACKLIST_KEYWORDS } from '@/lib/database';
 
 // Схема валидации для создания трека в очереди
 const QueueAddSchema = z.object({
@@ -9,6 +12,20 @@ const QueueAddSchema = z.object({
   message: z.string().optional(),
   amount: z.number().min(10, 'Минимальный донат: 10 рублей'),
 });
+
+/**
+ * Определяет провайдер по URL (YouTube или SoundCloud)
+ */
+function getProviderFromUrl(url: string): 'youtube' | 'soundcloud' | null {
+  const trimmedUrl = url.trim();
+  if (trimmedUrl.includes('youtube.com') || trimmedUrl.includes('youtu.be')) {
+    return 'youtube';
+  }
+  if (trimmedUrl.includes('soundcloud.com')) {
+    return 'soundcloud';
+  }
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,6 +45,15 @@ export async function POST(request: NextRequest) {
     }
 
     const { track_link, donor_name, message, amount } = validation.data;
+
+    // Определение провайдера из URL
+    const provider = getProviderFromUrl(track_link);
+    if (!provider) {
+      return NextResponse.json(
+        { error: 'Неверный URL трека. Поддерживаются только YouTube и SoundCloud' },
+        { status: 400 }
+      );
+    }
 
     // Создание доната в Supabase
     const { data: donation, error: donationError } = await supabaseAdmin
@@ -51,13 +77,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Создание/получение трека
+    // Создание/получение трека с правильным провайдером
     const { data: track, error: trackError } = await supabaseAdmin
       .from('tracks')
       .upsert(
         {
           url: track_link,
-          provider: 'queue_add',
+          provider: provider,
           title: message || null,
           artist: donor_name,
         },
@@ -74,6 +100,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Получение метаданных для проверки
+    try {
+      const metadata = await fetchMetadataFromUrl(track_link);
+
+      // Проверка blacklist
+      if (isTrackInBlacklist(metadata.title, metadata.artist)) {
+        console.warn(`❌ Трек "${metadata.title}" от "${metadata.artist}" в blacklist`);
+        // Удаляем донат и трек, если трек в blacklist
+        await supabaseAdmin.from('donations').delete().eq('id', donation.id);
+        await supabaseAdmin.from('tracks').delete().eq('id', track.id);
+        return NextResponse.json(
+          { error: 'Трек находится в blacklist' },
+          { status: 403 }
+        );
+      }
+
+      // Проверка длительности
+      if (isTrackTooLong(metadata.duration)) {
+        console.warn(`❌ Трек "${metadata.title}" слишком длинный: ${metadata.duration} сек`);
+        // Удаляем донат и трек, если трек слишком длинный
+        await supabaseAdmin.from('donations').delete().eq('id', donation.id);
+        await supabaseAdmin.from('tracks').delete().eq('id', track.id);
+        return NextResponse.json(
+          { error: `Максимальная длительность трека: ${MAX_TRACK_DURATION / 60} минут` },
+          { status: 403 }
+        );
+      }
+
+      // Обновление трека метаданными
+      const { error: updateError } = await supabaseAdmin
+        .from('tracks')
+        .update({
+          title: metadata.title,
+          artist: metadata.artist,
+          thumbnail_url: metadata.thumbnail_url,
+          duration: metadata.duration
+        })
+        .eq('id', track.id);
+
+      if (updateError) {
+        console.error('Track metadata update error:', updateError);
+      }
+    } catch (metadataError) {
+      console.error('Failed to fetch metadata for track:', metadataError);
+      // Не прерываем выполнение, если не удалось получить метаданные
+    }
+
     // Добавление в очередь
     const { data: queueItem, error: queueError } = await supabaseAdmin
       .from('queue')
@@ -82,6 +155,8 @@ export async function POST(request: NextRequest) {
         donation_id: donation.id,
         position: 1,
         status: 'pending',
+        priority_score: Math.floor(amount / 100), // Приоритет на основе суммы доната
+        votes_count: 0,
       })
       .select()
       .single();

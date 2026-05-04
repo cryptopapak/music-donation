@@ -35,6 +35,8 @@ create table if not exists queue (
   donation_id uuid references donations(id) not null,
   position integer not null,
   status text not null default 'pending' check (status in ('pending', 'playing', 'played', 'skipped')),
+  priority_score integer default 0,
+  votes_count integer default 0,
   started_at timestamp with time zone,
   ended_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
@@ -177,5 +179,42 @@ create policy "Service can manage streamers"
   on streamers for all
   using (auth.role() = 'service_role');
 
+-- Таблица голосов
+create table if not exists votes (
+  id uuid default uuid_generate_v4() primary key,
+  track_id uuid references queue(id) not null,
+  user_id uuid references auth.users(id),
+  ip_address text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(track_id, user_id),
+  unique(track_id, ip_address)
+);
+
+-- Индекс для votes
+create index if not exists idx_votes_track_id on votes(track_id);
+create index if not exists idx_votes_user_id on votes(user_id);
+
+-- RLS для votes
+alter table votes enable row level security;
+
+-- Политики для votes
+create policy "Anyone can create vote"
+  on votes for insert
+  with check (true);
+
+create policy "Anyone can view votes"
+  on votes for select
+  using (true);
+
+-- Функция для увеличения votes_count
+create or replace function increment_votes_count(p_track_id uuid)
+returns void as $$
+begin
+  update queue
+  set votes_count = coalesce(votes_count, 0) + 1
+  where track_id = p_track_id and status = 'pending';
+end;
+$$ language plpgsql;
+
 -- Realtime publications
-create publication supabase_realtime for table donations, queue, streamers;
+create publication supabase_realtime for table donations, queue, streamers, votes;
