@@ -23,6 +23,12 @@ interface QueueItem {
   votes_count: number;
   created_at: string;
   tracks: TrackData | null;
+  donation: {
+    id: string;
+    amount: number;
+    donor_name: string | null;
+    created_at: string;
+  } | null;
 }
 
 // Интерфейс для финального трека с данными доната
@@ -36,14 +42,16 @@ interface TrackWithQueueData extends TrackData {
   donation: {
     id: string;
     amount: number;
+    donor_name: string | null;
     created_at: string;
   } | null;
 }
 
 /**
  * Получение очереди треков с пагинацией
- * Возвращает треки из таблицы queue с данными из tracks
+ * Возвращает треки из таблицы queue с данными из tracks и donations
  * Сортировка: по priority_score (descending) для приоритетной очереди
+ * Фильтрация: только pending треки без битых данных
  */
 export async function GET(request: NextRequest) {
   try {
@@ -52,7 +60,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Получение очереди из таблицы queue с данными из tracks
+    // Получение очереди из таблицы queue с данными из tracks и donations
     const { data: queueItems, error } = await supabaseAdmin
       .from('queue')
       .select(`
@@ -70,8 +78,15 @@ export async function GET(request: NextRequest) {
           artist,
           thumbnail_url,
           duration
+        ),
+        donation:donations (
+          id,
+          amount,
+          donor_name,
+          created_at
         )
       `)
+      .eq('status', 'pending')
       .order('priority_score', { ascending: false })
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
@@ -84,11 +99,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Получение общего количества треков
-    const { count: totalCount } = await supabaseAdmin
-      .from('queue')
-      .select('*', { count: 'exact', head: true });
-
     // Преобразование данных в нужный формат
     const tracks = (queueItems as unknown as QueueItem[])
       .filter((item) => item.tracks !== null)
@@ -100,6 +110,7 @@ export async function GET(request: NextRequest) {
         priority_score: item.priority_score,
         votes_count: item.votes_count,
         created_at: item.created_at,
+        donation: item.donation,
       }));
 
     // Фильтрация треков без метаданных (исключаем треки с title=NULL, пустым title и provider='yookassa')
@@ -110,39 +121,10 @@ export async function GET(request: NextRequest) {
         track.provider !== 'yookassa'
     );
 
-    // Добавление donation данных
-    const tracksWithDonations = (await Promise.all(
-      filteredTracks.map(async (track) => {
-        const { data: queueItem } = await supabaseAdmin
-          .from('queue')
-          .select('donation_id')
-          .eq('id', track.queueId)
-          .single();
-
-        if (queueItem?.donation_id) {
-          const { data: donation } = await supabaseAdmin
-            .from('donations')
-            .select('id, amount, created_at')
-            .eq('id', queueItem.donation_id)
-            .single();
-
-          return {
-            ...track,
-            donation: donation || null,
-          };
-        }
-
-        return {
-          ...track,
-          donation: null,
-        };
-      })
-    )) as TrackWithQueueData[];
-
     return NextResponse.json(
       {
         success: true,
-        tracks: tracksWithDonations,
+        tracks: filteredTracks,
         total: filteredTracks.length,
         hasMore: offset + limit < filteredTracks.length,
       },

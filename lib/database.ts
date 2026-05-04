@@ -139,6 +139,19 @@ export interface Database {
 // Константы для ограничений
 export const MAX_TRACK_DURATION = 600; // 10 минут в секундах
 
+/**
+ * Определяет провайдера из URL трека
+ */
+function getProviderFromUrl(url: string): 'youtube' | 'soundcloud' {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'youtube';
+  }
+  if (url.includes('soundcloud.com')) {
+    return 'soundcloud';
+  }
+  return 'youtube'; // fallback по умолчанию
+}
+
 // Получение blacklist из .env (разделенные запятыми)
 const ENV_BLACKLIST_ARTISTS = process.env.BLACKLIST_ARTISTS
   ? process.env.BLACKLIST_ARTISTS.split(',').map(s => s.trim())
@@ -211,9 +224,7 @@ export async function addTrackToQueue(donationId: string) {
   }
 
   // Определение провайдера из URL
-  const provider = donation.track_url.includes('youtube.com') || donation.track_url.includes('youtu.be')
-    ? 'youtube'
-    : 'soundcloud';
+  const provider = getProviderFromUrl(donation.track_url);
 
   // Создание/получение трека
   const { data: track, error: trackError } = await supabaseAdmin
