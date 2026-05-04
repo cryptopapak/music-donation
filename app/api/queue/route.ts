@@ -3,6 +3,43 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
+// Интерфейс для трека с данными из таблицы tracks
+interface TrackData {
+  id: string;
+  url: string;
+  provider: string;
+  title: string | null;
+  artist: string | null;
+  thumbnail_url: string | null;
+  duration: number | null;
+}
+
+// Интерфейс для трека с данными из очереди
+interface QueueItem {
+  id: string;
+  status: string;
+  position: number;
+  priority_score: number;
+  votes_count: number;
+  created_at: string;
+  tracks: TrackData | null;
+}
+
+// Интерфейс для финального трека с данными доната
+interface TrackWithQueueData extends TrackData {
+  queueId: string;
+  status: string;
+  position: number;
+  priority_score: number;
+  votes_count: number;
+  created_at: string;
+  donation: {
+    id: string;
+    amount: number;
+    created_at: string;
+  } | null;
+}
+
 /**
  * Получение очереди треков с пагинацией
  * Возвращает треки из таблицы queue с данными из tracks
@@ -53,15 +90,17 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact', head: true });
 
     // Преобразование данных в нужный формат
-    const tracks = (queueItems || []).map((item) => ({
-      ...item.tracks,
-      queueId: item.id,
-      status: item.status,
-      position: item.position,
-      priority_score: item.priority_score,
-      votes_count: item.votes_count,
-      created_at: item.created_at,
-    }));
+    const tracks = (queueItems as unknown as QueueItem[])
+      .filter((item) => item.tracks !== null)
+      .map((item) => ({
+        ...(item.tracks as TrackData),
+        queueId: item.id,
+        status: item.status,
+        position: item.position,
+        priority_score: item.priority_score,
+        votes_count: item.votes_count,
+        created_at: item.created_at,
+      }));
 
     // Фильтрация треков без метаданных (исключаем треки с title=NULL, пустым title и provider='yookassa')
     const filteredTracks = tracks.filter(
@@ -72,7 +111,7 @@ export async function GET(request: NextRequest) {
     );
 
     // Добавление donation данных
-    const tracksWithDonations = await Promise.all(
+    const tracksWithDonations = (await Promise.all(
       filteredTracks.map(async (track) => {
         const { data: queueItem } = await supabaseAdmin
           .from('queue')
@@ -98,7 +137,7 @@ export async function GET(request: NextRequest) {
           donation: null,
         };
       })
-    );
+    )) as TrackWithQueueData[];
 
     return NextResponse.json(
       {
