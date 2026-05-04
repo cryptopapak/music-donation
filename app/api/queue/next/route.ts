@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { startPlayingTrack as dbStartPlayingTrack, getCurrentPlayingTrack } from '@/lib/database';
 
 // Константы для AFK detection
 const AFK_TIMEOUT_SECONDS = 300; // 5 минут без heartbeat
@@ -76,33 +77,11 @@ async function getNextTrackFromQueue() {
 
 /**
  * Обновляет статус трека на 'playing' и сдвигает позиции
+ * Использует функцию из lib/database.ts для централизованной логики
  */
 async function startPlayingTrack(queueId: string) {
   try {
-    // 1. Останавливаем всё, что сейчас играет
-    await supabaseAdmin
-      .from('queue')
-      .update({
-        status: 'played',
-        ended_at: new Date().toISOString()
-      })
-      .eq('status', 'playing');
-
-    // 2. Запускаем новый трек
-    const { error } = await supabaseAdmin
-      .from('queue')
-      .update({
-        status: 'playing',
-        started_at: new Date().toISOString(),
-      })
-      .eq('id', queueId);
-
-    if (error) {
-      console.error('Error updating track status:', error);
-      return false;
-    }
-
-    return true;
+    return await dbStartPlayingTrack(queueId);
   } catch (error) {
     console.error('Error starting track:', error);
     return false;

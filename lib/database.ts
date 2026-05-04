@@ -305,3 +305,98 @@ export async function addTrackToQueue(donationId: string) {
     throw new Error('Failed to add to queue');
   }
 }
+
+/**
+ * Запускает трек, сначала останавливая все играющие треки
+ * 1. Находит все треки со статусом 'playing'
+ * 2. Обновляет их на 'played' с ended_at = NOW()
+ * 3. Запускает новый трек со статусом 'playing'
+ */
+export async function startPlayingTrack(queueId: string) {
+  const { supabaseAdmin } = await import('@/lib/supabase');
+
+  try {
+    // 1. Останавливаем всё, что сейчас играет
+    const { error: stopError } = await supabaseAdmin
+      .from('queue')
+      .update({
+        status: 'played',
+        ended_at: new Date().toISOString()
+      })
+      .eq('status', 'playing');
+
+    if (stopError) {
+      console.error('Error stopping playing tracks:', stopError);
+      throw new Error('Failed to stop playing tracks');
+    }
+
+    // 2. Запускаем новый трек
+    const { error: startError } = await supabaseAdmin
+      .from('queue')
+      .update({
+        status: 'playing',
+        started_at: new Date().toISOString(),
+      })
+      .eq('id', queueId);
+
+    if (startError) {
+      console.error('Error starting track:', startError);
+      throw new Error('Failed to start track');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error in startPlayingTrack:', error);
+    throw error;
+  }
+}
+
+/**
+ * Получает текущий играющий трек
+ */
+export async function getCurrentPlayingTrack() {
+  const { supabaseAdmin } = await import('@/lib/supabase');
+
+  try {
+    const { data: queueItem, error } = await supabaseAdmin
+      .from('queue')
+      .select(`
+        id,
+        status,
+        position,
+        priority_score,
+        votes_count,
+        started_at,
+        ended_at,
+        tracks (
+          id,
+          url,
+          provider,
+          title,
+          artist,
+          thumbnail_url,
+          duration
+        ),
+        donation:donations (
+          id,
+          amount,
+          donor_name,
+          created_at
+        )
+      `)
+      .eq('status', 'playing')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      console.error('Current track fetch error:', error);
+      return null;
+    }
+
+    return queueItem;
+  } catch (error) {
+    console.error('Error getting current track:', error);
+    return null;
+  }
+}
