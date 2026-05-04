@@ -80,8 +80,9 @@ export async function POST(request: NextRequest) {
       .insert({
         amount,
         track_url: description,
-        track_title: metadata?.title || donorName || null,
-        track_artist: metadata?.artist || email || null,
+        track_title: metadata?.title || null,
+        track_artist: metadata?.artist || null,
+        donor_name: donorName || null,
         provider: process.env.NEXT_PUBLIC_USE_MOCK === 'false' ? 'yookassa' : 'mock',
         status: 'processing',
       })

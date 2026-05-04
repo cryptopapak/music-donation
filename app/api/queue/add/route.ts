@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
         track_url: track_link,
         track_title: message || null,
         track_artist: donor_name,
+        donor_name: donor_name,
         provider: 'queue_add',
         status: 'pending',
       })

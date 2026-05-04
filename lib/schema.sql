@@ -9,6 +9,7 @@ create table if not exists donations (
   track_url text not null,
   track_title text,
   track_artist text,
+  donor_name text,
   provider text not null default 'mock',
   payment_id text,
   status text not null default 'pending' check (status in ('pending', 'processing', 'completed', 'failed')),

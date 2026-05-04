@@ -60,6 +60,14 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const offset = parseInt(searchParams.get('offset') || '0');
 
+    // 🔍 ЛОГИРОВАНИЕ ПЕРЕД ЗАПРОСОМ
+    console.log('🔍 [DB QUERY] Начинаю поиск треков в очереди...');
+    console.log('🔍 [DB QUERY] Статус для поиска: pending');
+    console.log('🔍 [DB QUERY] Таблица: queue');
+    console.log('🔍 [DB QUERY] JOIN с tracks: да');
+    console.log('🔍 [DB QUERY] JOIN с donations: да');
+    console.log('🔍 [DB QUERY] Пагинация: offset=' + offset + ', limit=' + limit);
+
     // Получение очереди из таблицы queue с данными из tracks и donations
     const { data: queueItems, error } = await supabaseAdmin
       .from('queue')
@@ -91,7 +99,10 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
-    console.log(`[QUEUE DEBUG] Found ${queueItems?.length || 0} queue items with status 'pending'`);
+    // 🔍 ЛОГИРОВАНИЕ ПОСЛЕ ЗАПРОСА
+    console.log('🔍 [DB QUERY] Найдено записей в БД:', queueItems?.length);
+    if (error) console.error('❌ [DB QUERY] Ошибка Supabase:', error);
+    console.log('🔍 [DB QUERY] queueItems:', JSON.stringify(queueItems, null, 2));
 
     if (error) {
       console.error('Queue fetch error:', error);

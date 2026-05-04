@@ -17,6 +17,7 @@ export interface Database {
           track_url: string;
           track_title: string | null;
           track_artist: string | null;
+          donor_name: string | null;
           provider: string;
           payment_id: string | null;
           status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -30,6 +31,7 @@ export interface Database {
           track_url: string;
           track_title?: string | null;
           track_artist?: string | null;
+          donor_name?: string | null;
           provider?: string;
           payment_id?: string | null;
           status?: 'pending' | 'processing' | 'completed' | 'failed';
@@ -43,6 +45,7 @@ export interface Database {
           track_url?: string;
           track_title?: string | null;
           track_artist?: string | null;
+          donor_name?: string | null;
           provider?: string;
           payment_id?: string | null;
           status?: 'pending' | 'processing' | 'completed' | 'failed';

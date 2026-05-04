@@ -12,7 +12,7 @@ import { parseTrackUrl } from '@/lib/parser';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, trackUrl, trackTitle, trackArtist } = body;
+    const { amount, trackUrl, trackTitle, trackArtist, donorName } = body;
 
     // Валидация входных данных
     if (!amount || !trackUrl) {
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
       trackUrl,
       trackTitle || parsedTrack.title || undefined,
       trackArtist || parsedTrack.artist || undefined,
+      donorName || undefined,
       parsedTrack.provider
     );
 

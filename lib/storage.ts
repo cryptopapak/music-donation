@@ -16,6 +16,7 @@ interface Donation {
   trackUrl: string;
   trackTitle?: string | null;
   trackArtist?: string | null;
+  donorName?: string | null;
   provider: string;
   status: 'pending' | 'completed';
   createdAt: string;
@@ -45,13 +46,14 @@ function generateId(): string {
 }
 
 // Донаты
-export function createDonation(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string, provider: string = 'mock'): Donation {
+export function createDonation(amount: number, trackUrl: string, trackTitle?: string, trackArtist?: string, donorName?: string, provider: string = 'mock'): Donation {
   const donation: Donation = {
     id: generateId(),
     amount,
     trackUrl,
     trackTitle: trackTitle || null,
     trackArtist: trackArtist || null,
+    donorName: donorName || null,
     provider,
     status: 'completed',
     createdAt: new Date().toISOString(),
