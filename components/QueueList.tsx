@@ -81,6 +81,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       });
       const data: QueueResponse = await response.json();
       console.log('📦 Ответ от API:', data);
+      console.log('📦 Полный ответ от API (raw):', JSON.stringify(data, null, 2));
 
       if (data.success) {
         setQueue(data.tracks);

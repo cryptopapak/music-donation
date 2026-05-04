@@ -123,6 +123,18 @@ export async function POST(request: NextRequest) {
         .eq('id', donation.id);
     }
 
+    // В mock режиме добавляем трек в очередь сразу (webhook не вызывается)
+    if (paymentResult.confirmationUrl === null) {
+      console.log(`💰 [CREATE PAYMENT] Mock режим, добавление трека в очередь напрямую`);
+      try {
+        const { addTrackToQueue } = await import('@/lib/database');
+        await addTrackToQueue(donation.id);
+        console.log(`✅ [CREATE PAYMENT] Трек добавлен в очередь для donation_id=${donation.id}`);
+      } catch (queueError) {
+        console.error(`❌ [CREATE PAYMENT] Ошибка добавления в очередь:`, queueError);
+      }
+    }
+
     return NextResponse.json(
       {
         success: true,

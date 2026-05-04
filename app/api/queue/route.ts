@@ -120,6 +120,8 @@ export async function GET(request: NextRequest) {
     // Возвращаем все треки из очереди без фильтрации по метаданным
     const filteredTracks = tracks;
 
+    console.log('RESPONSE PAYLOAD:', JSON.stringify({ success: true, tracks: filteredTracks, total: filteredTracks.length, hasMore: offset + limit < filteredTracks.length }, null, 2));
+
     return NextResponse.json(
       {
         success: true,
