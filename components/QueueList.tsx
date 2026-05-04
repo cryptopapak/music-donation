@@ -21,11 +21,14 @@ interface QueueItem {
   id: string;
   position: number;
   status: string;
+  queueId?: string;
   started_at?: string | null;
   ended_at?: string | null;
   created_at: string;
+  priority_score?: number;
+  votes_count?: number;
+  track?: Track | null;
   donation: Donation | null;
-  track: Track | null;
 }
 
 interface QueueResponse {
@@ -42,6 +45,7 @@ interface QueueListProps {
 }
 
 export function QueueList({ className = '', onRefetch }: QueueListProps) {
+  console.log('🎵 QueueList component rendered');
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -51,15 +55,19 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
   const loadQueue = async (newOffset: number = offset, newLimit: number = limit) => {
     try {
       setIsLoading(true);
+      console.log('🔍 Загрузка очереди: offset=', newOffset, 'limit=', newLimit);
       const response = await fetch(`/api/queue?limit=${newLimit}&offset=${newOffset}`);
       const data: QueueResponse = await response.json();
+      console.log('📦 Ответ от API:', data);
 
       if (data.success) {
         setQueue(data.tracks);
         setOffset(newOffset);
         setLimit(newLimit);
+        console.log('✅ Очередь загружена:', data.tracks.length, 'треков');
       } else {
         setError(data.error || 'Ошибка при загрузке очереди');
+        console.error('❌ Ошибка загрузки очереди:', data.error);
       }
     } catch (err) {
       console.error('Error loading queue:', err);
@@ -70,6 +78,7 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
   };
 
   useEffect(() => {
+    console.log('🔄 QueueList useEffect triggered');
     loadQueue();
   }, []);
 
@@ -147,7 +156,9 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
         </div>
       ) : (
         <div className="space-y-3">
-          {queue.map((item) => (
+          {queue.map((item) => {
+            console.log('🎵 QueueList rendering track:', item);
+            return (
             <div
               key={item.id}
               className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
@@ -217,7 +228,8 @@ export function QueueList({ className = '', onRefetch }: QueueListProps) {
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
