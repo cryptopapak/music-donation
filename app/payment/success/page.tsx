@@ -12,6 +12,9 @@ function PaymentSuccessContent() {
   useEffect(() => {
     const paymentId = searchParams.get('paymentId');
     const paymentStatus = searchParams.get('status');
+    const donationId = searchParams.get('donation_id');
+
+    console.log(`💰 [SUCCESS PAGE] paymentId: ${paymentId}, donationId: ${donationId}`);
 
     if (!paymentId) {
       setStatus('error');
@@ -22,8 +25,10 @@ function PaymentSuccessContent() {
     // Проверяем статус платежа
     const verifyPayment = async () => {
       try {
+        console.log(`💰 [SUCCESS PAGE] Проверка платежа ${paymentId}`);
         const response = await fetch(`/api/payment-verify?paymentId=${paymentId}`);
         const data = await response.json();
+        console.log(`💰 [SUCCESS PAGE] Результат проверки:`, data);
 
         if (data.success && data.verified) {
           setStatus('success');
@@ -38,7 +43,7 @@ function PaymentSuccessContent() {
           setMessage('Платеж не подтвержден. Попробуйте снова.');
         }
       } catch (error) {
-        console.error('Payment verification error:', error);
+        console.error('❌ [SUCCESS PAGE] Payment verification error:', error);
         setStatus('error');
         setMessage('Ошибка при проверке платежа');
       }

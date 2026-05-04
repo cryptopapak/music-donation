@@ -45,6 +45,7 @@ create table if not exists queue (
 
 -- Индексы для производительности
 create index if not exists idx_donations_status on donations(status);
+create index if not exists idx_donations_payment_id on donations(payment_id);
 create index if not exists idx_donations_created_at on donations(created_at);
 create index if not exists idx_queue_position on queue(position);
 create index if not exists idx_queue_status on queue(status);

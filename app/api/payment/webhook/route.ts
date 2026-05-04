@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(rawBody);
     const { event, object } = body;
 
-    console.log(' webhook event:', event);
+    console.log('💰 [YUKASSA WEBHOOK] Получено событие:', event);
+    console.log('💰 [YUKASSA WEBHOOK] Данные платежа:', JSON.stringify(object, null, 2));
 
     // Обработка события payment.succeeded
     if (event === 'payment.succeeded') {
@@ -69,7 +70,9 @@ async function handlePaymentSucceeded(payment: any) {
   const { id: paymentId, metadata, amount } = payment;
   const { trackUrl, donationId } = metadata || {};
 
-  console.log(`💰 Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
+  console.log(`💰 [YUKASSA WEBHOOK] Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
+  console.log(`💰 [YUKASSA WEBHOOK] Metadata:`, metadata);
+  console.log(`💰 [YUKASSA WEBHOOK] donationId из metadata:`, donationId);
 
   // Обновляем статус доната на completed
   const { error: donationError } = await supabaseAdmin
@@ -82,16 +85,21 @@ async function handlePaymentSucceeded(payment: any) {
     .eq('status', 'processing');
 
   if (donationError) {
-    console.error('Donation update error:', donationError);
+    console.error('❌ [YUKASSA WEBHOOK] Donation update error:', donationError);
+  } else {
+    console.log(`✅ [YUKASSA WEBHOOK] Статус доната обновлен на completed`);
   }
 
   // Добавляем трек в очередь
   if (donationId) {
     try {
+      console.log(`💰 [YUKASSA WEBHOOK] Вызов addTrackToQueue(${donationId})`);
       await addTrackToQueue(donationId);
-      console.log(`✅ Трек добавлен в очередь: donation_id=${donationId}`);
+      console.log(`✅ [YUKASSA WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);
     } catch (queueError) {
-      console.error('Error adding track to queue:', queueError);
+      console.error('❌ [YUKASSA WEBHOOK] Error adding track to queue:', queueError);
     }
+  } else {
+    console.warn('⚠️ [YUKASSA WEBHOOK] donationId отсутствует в metadata');
   }
 }

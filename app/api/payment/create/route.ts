@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Создание доната в Supabase (статус processing - ожидает оплаты)
+    console.log(`💰 [CREATE PAYMENT] Создание доната для трека: ${description}`);
     const { data: donation, error: donationError } = await supabaseAdmin
       .from('donations')
       .insert({
@@ -88,22 +89,24 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (donationError) {
-      console.error('Donation insert error:', donationError);
+      console.error('❌ [CREATE PAYMENT] Donation insert error:', donationError);
       return NextResponse.json(
         { error: 'Failed to create donation' },
         { status: 500 }
       );
     }
+    console.log(`✅ [CREATE PAYMENT] Донат создан: id=${donation.id}, amount=${amount}`);
 
     // Генерация trackUrl для платежа (используем URL для возврата)
     const trackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?donation_id=${donation.id}`;
 
     // Создание платежа через ЮKassa
+    // createPayment(amount, trackUrl, trackTitle?, trackArtist?, donationId?)
     const paymentResult = await createPayment(
       amount,
       trackUrl,
-      description,
-      email || donorName || undefined,
+      metadata?.title || donorName || null,
+      metadata?.artist || email || null,
       donation.id
     );
 

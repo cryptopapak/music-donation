@@ -20,6 +20,8 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     metadata.donationId = donationId;
   }
 
+  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payment/webhook`;
+
   const paymentData = {
     amount: {
       value: amount.toFixed(2),
@@ -32,6 +34,9 @@ export async function createYukassaPayment(amount: number, trackUrl: string, des
     description: description,
     metadata,
     capture: true,
+    notification: {
+      url: webhookUrl,
+    },
   };
 
   try {
