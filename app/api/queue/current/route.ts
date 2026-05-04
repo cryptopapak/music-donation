@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
           thumbnail_url,
           duration
         ),
-        donations (
+        donation:donations (
           id,
-          user_id,
           amount,
+          donor_name,
           created_at
         )
       `)
@@ -48,10 +48,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Извлекаем информацию о донатере
-    const donorInfo = queueItem.donations && Array.isArray(queueItem.donations) && queueItem.donations.length > 0
+    const donorInfo = queueItem.donation && Array.isArray(queueItem.donation) && queueItem.donation.length > 0
       ? {
-          name: queueItem.donations[0].user_id ? 'Аноним' : null, // В реальном приложении можно получить имя пользователя
-          amount: Number(queueItem.donations[0].amount),
+          name: queueItem.donation[0].donor_name || 'Аноним',
+          amount: Number(queueItem.donation[0].amount),
         }
       : null;
 
