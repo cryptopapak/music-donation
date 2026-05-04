@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       .select('*', { count: 'exact', head: true });
 
     // Преобразование данных в нужный формат
-    const tracks = queueItems?.map((item) => ({
+    const tracks = (queueItems || []).map((item) => ({
       ...item.tracks,
       queueId: item.id,
       status: item.status,
@@ -61,11 +61,19 @@ export async function GET(request: NextRequest) {
       priority_score: item.priority_score,
       votes_count: item.votes_count,
       created_at: item.created_at,
-    })) || [];
+    }));
+
+    // Фильтрация треков без метаданных (исключаем треки с title=NULL, пустым title и provider='yookassa')
+    const filteredTracks = tracks.filter(
+      (track) =>
+        track.title !== null &&
+        track.title !== '' &&
+        track.provider !== 'yookassa'
+    );
 
     // Добавление donation данных
     const tracksWithDonations = await Promise.all(
-      tracks.map(async (track) => {
+      filteredTracks.map(async (track) => {
         const { data: queueItem } = await supabaseAdmin
           .from('queue')
           .select('donation_id')
@@ -96,8 +104,8 @@ export async function GET(request: NextRequest) {
       {
         success: true,
         tracks: tracksWithDonations,
-        total: totalCount || 0,
-        hasMore: offset + limit < (totalCount || 0),
+        total: filteredTracks.length,
+        hasMore: offset + limit < filteredTracks.length,
       },
       { status: 200 }
     );
