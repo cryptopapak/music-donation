@@ -313,14 +313,14 @@ export async function addTrackToQueue(donationId: string) {
   const priorityScore = donationData ? Math.floor(donationData.amount / 100) : 0;
   console.log(`💰 [ADD TO QUEUE] priorityScore: ${priorityScore}`);
 
-  // Добавление в очередь
-  console.log('💰 [ADD TO QUEUE] Статус:', 'pending');
+  const status = 'pending';
+  console.log(`🔄 [STATUS CHANGE] Меняю статус на: ${status}`);
   console.log(`💰 [ADD TO QUEUE] Добавление в очередь: track_id=${track.id}, donation_id=${donation.id}`);
   console.log(`💰 [ADD TO QUEUE] Данные для вставки:`, {
     track_id: track.id,
     donation_id: donation.id,
     position: 1,
-    status: 'pending',
+    status: status,
     priority_score: priorityScore,
     votes_count: 0,
   });
@@ -351,6 +351,30 @@ export async function addTrackToQueue(donationId: string) {
     throw new Error('Failed to add to queue');
   }
   console.log(`✅ [ADD TO QUEUE] Трек успешно добавлен в очередь!`);
+  
+  // Проверка: считываем добавленную запись из базы
+  try {
+    const { data: insertedItem, error: checkError } = await supabaseAdmin
+      .from('queue')
+      .select('*')
+      .eq('donation_id', donation.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (checkError) {
+      console.error(`❌ [ADD TO QUEUE] Ошибка проверки вставленной записи:`, checkError);
+    } else {
+      console.log(`💰 [ADD TO QUEUE] Проверка вставленной записи:`, {
+        id: insertedItem?.id,
+        status: insertedItem?.status,
+        track_id: insertedItem?.track_id,
+        donation_id: insertedItem?.donation_id
+      });
+    }
+  } catch (checkError) {
+    console.error(`❌ [ADD TO QUEUE] Ошибка проверки:`, checkError);
+  }
 }
 
 /**
@@ -360,10 +384,15 @@ export async function addTrackToQueue(donationId: string) {
  * 3. Запускает новый трек со статусом 'playing'
  */
 export async function startPlayingTrack(queueId: string) {
+  console.log(`💰 [START PLAYING TRACK] === НОВЫЙ ЗАПРОС ===`);
+  console.log(`💰 [START PLAYING TRACK] queueId: ${queueId}`);
+  
   const { supabaseAdmin } = await import('@/lib/supabase');
 
   try {
     // 1. Останавливаем всё, что сейчас играет
+    console.log(`💰 [START PLAYING TRACK] Останавливаю все треки со статусом 'playing'`);
+    console.log(`🔄 [STATUS CHANGE] Меняю статус с 'playing' на 'played' для всех текущих треков`);
     const { error: stopError } = await supabaseAdmin
       .from('queue')
       .update({
@@ -378,6 +407,8 @@ export async function startPlayingTrack(queueId: string) {
     }
 
     // 2. Запускаем новый трек
+    console.log(`💰 [START PLAYING TRACK] Запускаю трек ${queueId} со статусом 'playing'`);
+    console.log(`🔄 [STATUS CHANGE] Меняю статус на 'playing' для трека ${queueId}`);
     const { error: startError } = await supabaseAdmin
       .from('queue')
       .update({
@@ -391,6 +422,7 @@ export async function startPlayingTrack(queueId: string) {
       throw new Error('Failed to start track');
     }
 
+    console.log(`✅ [START PLAYING TRACK] Трек ${queueId} успешно запущен!`);
     return true;
   } catch (error) {
     console.error('Error in startPlayingTrack:', error);

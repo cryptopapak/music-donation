@@ -236,7 +236,30 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
               {/* Кнопки управления */}
               {item.status === 'pending' && (
                 <button
-                  onClick={() => console.log('Play:', item.id)}
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/queue/next', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ queueId: item.queueId }),
+                      });
+                      
+                      if (response.ok) {
+                        // Обновляем очередь после успешного запуска трека
+                        if (onRefetch) {
+                          onRefetch();
+                        } else {
+                          refetch();
+                        }
+                      } else {
+                        console.error('Ошибка при запуске трека:', await response.text());
+                      }
+                    } catch (error) {
+                      console.error('Ошибка при запуске трека:', error);
+                    }
+                  }}
                   className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm"
                 >
                   ▶️ Играть

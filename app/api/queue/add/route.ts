@@ -149,13 +149,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Добавление в очередь
+    const status = 'pending';
+    console.log(`💰 [QUEUE ADD] Добавляю трек со статусом: ${status}`);
+    console.log(`💰 [QUEUE ADD] Данные для вставки:`, {
+      track_id: track.id,
+      donation_id: donation.id,
+      position: 1,
+      status: status,
+      priority_score: Math.floor(amount / 100),
+      votes_count: 0,
+    });
+    
     const { data: queueItem, error: queueError } = await supabaseAdmin
       .from('queue')
       .insert({
         track_id: track.id,
         donation_id: donation.id,
         position: 1,
-        status: 'pending',
+        status: status,
         priority_score: Math.floor(amount / 100), // Приоритет на основе суммы доната
         votes_count: 0,
       })
@@ -163,12 +174,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (queueError) {
-      console.error('Queue insert error:', queueError);
+      console.error('💰 [QUEUE ADD] Queue insert error:', queueError);
       return NextResponse.json(
         { error: 'Failed to add to queue' },
         { status: 500 }
       );
     }
+    
+    console.log(`💰 [QUEUE ADD] Трек успешно добавлен в очередь! id=${queueItem.id}, status=${queueItem.status}`);
 
     return NextResponse.json(
       {

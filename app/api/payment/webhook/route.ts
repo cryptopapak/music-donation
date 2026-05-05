@@ -116,6 +116,25 @@ async function handlePaymentSucceeded(payment: any) {
   try {
     await addTrackToQueue(donationId);
     console.log(`✅ [WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);
+    
+    // Проверяем, что происходит с очередью после добавления
+    const { data: queueAfterAdd, error: queueError } = await supabaseAdmin
+      .from('queue')
+      .select('*')
+      .eq('donation_id', donationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (queueError) {
+      console.error(`❌ [WEBHOOK] Ошибка проверки очереди:`, queueError);
+    } else {
+      console.log(`💰 [WEBHOOK] Проверка очереди после добавления:`, {
+        id: queueAfterAdd?.id,
+        status: queueAfterAdd?.status,
+        donation_id: queueAfterAdd?.donation_id
+      });
+    }
   } catch (queueError) {
     console.error(`❌ [WEBHOOK] Ошибка добавления в очередь:`, queueError);
     console.error(`❌ [WEBHOOK] donationId: ${donationId}`);

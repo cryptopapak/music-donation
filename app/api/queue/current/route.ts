@@ -4,8 +4,11 @@ import { supabaseAdmin } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  console.log('💰 [QUEUE CURRENT] === НОВЫЙ ЗАПРОС ===');
+  
   try {
     // Ищем трек со статусом 'playing' в очереди
+    console.log('💰 [QUEUE CURRENT] Ищу трек со статусом playing...');
     const { data: queueItem, error } = await supabaseAdmin
       .from('queue')
       .select(`
@@ -33,6 +36,8 @@ export async function GET(request: NextRequest) {
       `)
       .eq('status', 'playing')
       .single();
+      
+    console.log(`💰 [QUEUE CURRENT] Найден трек:`, queueItem ? `id=${queueItem.id}, status=${queueItem.status}` : 'null');
 
     if (error && error.code !== 'PGRST116') { // PGRST116 - это "не найдено", что ок
       console.error('Current track fetch error:', error);
