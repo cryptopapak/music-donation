@@ -57,17 +57,25 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  const handlePlay = async (trackId: string) => {
-    console.log('🎯 [CLICK] trackId:', trackId);
+  // State watcher to monitor changes
+  useEffect(() => {
+    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
+  }, [playingTrackId]);
 
-    setPlayingTrackId(trackId);
+  const handlePlay = async (queueId: string) => {
+    console.log('🎯 [CLICK] queueId:', queueId);
+    console.log('🎯 [STATE BEFORE]:', playingTrackId);
+
+    setPlayingTrackId(queueId);
 
     try {
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queueId: trackId })
+        body: JSON.stringify({ queueId })
       });
+
+      console.log('📡 [RESPONSE STATUS]:', response.status);
 
       if (response.status === 400) {
         const errorData = await response.json();
@@ -75,7 +83,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         console.warn('⚠️ [API 400]:', errorData);
         alert(errorData.error || 'Трек уже обработан');
 
-        // 🔥 КРИТИЧНО: мгновенная синхронизация
+        console.log('🔄 [SYNC] loadQueue after 400');
+        // 🔥 Принудительный сброс перед синхронизацией
+        setPlayingTrackId(null);
         await loadQueue();
 
         return;
@@ -85,18 +95,22 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('✅ [SUCCESS]:', data);
-
-      // Обновляем список после успешного запуска
+      console.log('✅ [SUCCESS]');
       await loadQueue();
 
     } catch (error) {
       console.error('❌ [ERROR]:', error);
-      alert('Ошибка при запуске трека');
+      alert('Ошибка запуска');
     } finally {
-      // 🔥 ГАРАНТИЯ: кнопка никогда не "залипнет"
-      setPlayingTrackId(null);
+      console.log('🔓 [FINALLY] before reset:', playingTrackId);
+
+      // 🔥 КРИТИЧЕСКИЙ ФИКС: сброс через функцию (анти-stale)
+      setPlayingTrackId(prev => {
+        console.log('🔓 [FINALLY] prev state:', prev);
+        return null;
+      });
+
+      console.log('🔓 [FINALLY] reset done');
     }
   };
 
