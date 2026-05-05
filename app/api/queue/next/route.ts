@@ -247,18 +247,14 @@ export async function POST(request: NextRequest) {
         }, { status: 404 });
       }
 
-      // Check if track is already in a played or playing status
-      if (queueItem.status === 'played' || queueItem.status === 'playing') {
-        console.error(`❌ [QUEUE NEXT POST] Трек уже в статусе ${queueItem.status}`);
-        return NextResponse.json({ 
-          error: `Track is already ${queueItem.status}. Please refresh queue.` 
-        }, { status: 400 });
-      }
-
       if (queueItem.status !== 'pending') {
-        console.error('❌ [QUEUE NEXT POST] Трек не в статусе pending:', queueItem.status);
-        return NextResponse.json({ 
-          error: `Track status is ${queueItem.status}, not pending` 
+        console.error(`❌ [QUEUE NEXT] invalid status: ${queueItem.status}`);
+
+        return NextResponse.json({
+          error: queueItem.status === 'playing'
+            ? 'Трек уже воспроизводится'
+            : 'Трек уже воспроизведен',
+          currentStatus: queueItem.status
         }, { status: 400 });
       }
 

@@ -273,7 +273,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
               {item.status === 'pending' && (
                 <button
                   onClick={async () => {
-                    console.log('🎯 CLICK trackId:', item.id);
+                    console.log('🎯 [CLICK] trackId:', item.id);
                     console.log('🎯 BEFORE isPlaying:', playingTrackId);
 
                     // Set loading state for this track
@@ -290,23 +290,34 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
                       console.log('📡 [UI] Ответ от API:', response.status);
 
-                      if (!response.ok) {
+                      if (response.status === 400) {
                         const error = await response.json();
-                        console.error('❌ [UI] Ошибка запуска:', error);
-                        // Reset loading state on error
-                        setPlayingTrackId(null);
-                      } else {
-                        console.log('✅ [UI] Трек успешно запущен');
-                        // On success, refresh the queue
-                        if (onRefetch) {
-                          onRefetch();
-                        } else {
-                          refetch();
-                        }
+
+                        console.error('❌ [API 400]:', error);
+
+                        alert(error.error || 'Трек уже обработан');
+
+                        // 🔥 КЛЮЧ: синхронизация UI с БД
+                        await loadQueue();
+
+                        return;
                       }
-                    } catch (err) {
-                      console.error('❌ [UI] Ошибка при запуске трека:', err);
-                      // Reset loading state on error
+
+                      if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                      }
+
+                      const data = await response.json();
+                      console.log('✅ [SUCCESS]:', data);
+
+                      // обновление UI
+                      await loadQueue();
+
+                    } catch (error) {
+                      console.error('❌ [ERROR]:', error);
+                      alert('Ошибка при запуске трека');
+                    } finally {
+                      // всегда сбрасываем
                       setPlayingTrackId(null);
                     }
                   }}
