@@ -68,6 +68,14 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
   }, [playingTrackId]);
 
+  // Cleanup: ensure isLoading is reset when component unmounts
+  useEffect(() => {
+    return () => {
+      console.log('🧹 [CLEANUP] reset isLoading');
+      setIsLoading(false);
+    };
+  }, []);
+
   const handlePlay = async (queueId: string) => {
     setPlayingTrackId(queueId);
 
@@ -121,9 +129,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
     lastUpdateTime = now;
     
+    setIsLoading(true);
+
     try {
-      setIsLoading(true);
-      
       // Cancel any previous request
       if (abortController) {
         abortController.abort();
@@ -133,7 +141,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       const controller = new AbortController();
       setAbortController(controller);
 
-      console.log('📡 [LOAD] Запрос очереди...');
+      console.log('🚀 [LOAD] Старт загрузки');
       const response = await fetch(`/api/queue?status=pending&limit=${newLimit}&offset=${newOffset}`, {
         cache: 'no-store',
         headers: {
@@ -142,10 +150,13 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         },
         signal: controller.signal
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       
       const data: QueueResponse = await response.json();
-      console.log('✅ [LOAD] Данные получены:', data);
-      console.log('📦 Полный ответ от API (raw):', JSON.stringify(data, null, 2));
+      console.log('✅ [LOAD] Успех:', data);
 
       if (data.success) {
         // Completely replace the queue state to avoid sync issues
@@ -158,13 +169,15 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         console.error('❌ Ошибка загрузки очереди:', data.error);
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.log('Fetch cancelled');
-      } else {
+      console.error('❌ [LOAD] Ошибка:', err);
+
+      if (err.name !== 'AbortError') {
         console.error('Error loading queue:', err);
         setError('Не удалось загрузить очередь');
       }
     } finally {
+      // 🔥 ГАРАНТИЯ: всегда сбрасываем
+      console.log('🔓 [LOAD] Сброс isLoading');
       setIsLoading(false);
     }
   }, [offset, limit]);
