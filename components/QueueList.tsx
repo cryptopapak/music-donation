@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface Track {
   id: string;
@@ -69,12 +69,28 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   
-  let lastUpdateTime = 0;
+  const lastUpdateTimeRef = useRef(0);
 
   // State watcher to monitor changes
   useEffect(() => {
     console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
   }, [playingTrackId]);
+
+  // Debug useEffect for isLoading
+  useEffect(() => {
+    console.log('👀 [WATCH] isLoading changed:', isLoading);
+  }, [isLoading]);
+
+
+  // State watcher to monitor changes
+  useEffect(() => {
+    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
+  }, [playingTrackId]);
+
+  // Debug useEffect for isLoading
+  useEffect(() => {
+    console.log('👀 [WATCH] isLoading changed:', isLoading);
+  }, [isLoading]);
 
   // Cleanup: ensure isLoading is reset when component unmounts
   useEffect(() => {
@@ -124,42 +140,49 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
   // Fixed loadQueue function - following the exact specification
   const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
+    // Anti-spam проверка
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < MIN_UPDATE_INTERVAL) {
+      console.log('⏳ [LOAD] Слишком часто - пропускаю');
+      return;
+    }
+    
     if (isLoading) {
       console.log('⛔ [LOAD] Уже загружается — пропуск');
       return;
     }
 
-    console.log('🚀 [LOAD] start');
+    console.log('🚀 [LOAD] Начинаю загрузку...');
+    lastUpdateTimeRef.current = now;
     setIsLoading(true);
 
     try {
+      console.log('📡 [API] Запрос к /api/queue...');
       const response = await fetch(`/api/queue?status=pending&offset=${newOffset}&limit=${newLimit}`);
-
+      
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('✅ [API] Данные получены:', data);
 
-      console.log('📦 RAW DATA:', data);
-      console.log('📦 TRACKS:', data.tracks);
-
-      // 🔥 КРИТИЧНО: правильная структура
       const tracks = Array.isArray(data.tracks) ? data.tracks : [];
+      console.log('📦 [DATA] Треков:', tracks.length);
 
-      console.log('✅ Очередь загружена:', tracks.length, 'треков');
-
-      setQueue(tracks);          // ✅ СНАЧАЛА данные
+      setQueue(tracks);
       setTotal(data.total || 0);
-
-    } catch (error) {
+      
+    } catch (error: any) {
       console.error('❌ [LOAD ERROR]:', error);
-
+      setError(error.message);
+      
     } finally {
-      setIsLoading(false);       // ✅ ПОТОМ loading
-      console.log('🔓 [LOAD] reset isLoading');
+      // КРИТИЧНО: ВСЕГДА сбрасывай isLoading!
+      console.log('🔓 [LOAD] Сбрасываю isLoading');
+      setIsLoading(false);
     }
-  }, [isLoading]); // Added dependency array that includes isLoading
+  }, [isLoading, offset, limit]); // Updated dependency array
 
   // Single useEffect for polling with AbortController to prevent memory leaks
   useEffect(() => {
