@@ -93,26 +93,46 @@ async function handlePaymentSucceeded(payment: any) {
     return;
   }
 
-  // Обновляем статус доната на completed
-  console.log(`💰 [WEBHOOK] Обновление доната с payment_id=${paymentId}`);
-  const { error: donationError } = await supabaseAdmin
+  // Сначала проверим текущий статус доната
+  console.log(`💰 [WEBHOOK] Проверка текущего статуса доната с id=${donationId}`);
+  const { data: currentDonation, error: currentDonationError } = await supabaseAdmin
+    .from('donations')
+    .select('status')
+    .eq('id', donationId)
+    .single();
+
+  if (currentDonationError) {
+    console.error('❌ [WEBHOOK] Error fetching current donation:', currentDonationError);
+    console.error('❌ [WEBHOOK] Данные доната для проверки:', { donationId });
+  } else {
+    console.log(`💰 [WEBHOOK] Текущий статус доната: ${currentDonation?.status}`);
+  }
+
+  // Обновляем статус доната на completed только если он имеет статус 'processing'
+  console.log(`💰 [WEBHOOK] Обновление доната с id=${donationId} и payment_id=${paymentId}`);
+  const { data: updatedDonation, error: donationError } = await supabaseAdmin
     .from('donations')
     .update({
       status: 'completed',
       payment_id: paymentId,
     })
-    .eq('payment_id', paymentId)
-    .eq('status', 'processing');
+    .eq('id', donationId)
+    .eq('status', 'processing')
+    .select()
+    .single();
 
   if (donationError) {
     console.error('❌ [WEBHOOK] Donation update error:', donationError);
-    console.error('❌ [WEBHOOK] Данные доната:', { paymentId, status: 'processing' });
-  } else {
+    console.error('❌ [WEBHOOK] Данные доната:', { donationId, paymentId, status: 'processing' });
+  } else if (updatedDonation) {
     console.log(`✅ [WEBHOOK] Статус доната обновлен на completed`);
+  } else {
+    console.log(`⚠️ [WEBHOOK] Донат не был в статусе 'processing', возможно уже обработан`);
+    // Even if the update didn't happen, we still try to add to queue
   }
 
   // Добавляем трек в очередь
-  console.log(`💰 [WEBHOOK] Вызов addTrackToQueue(${donationId})`);
+  console.log('💰 [WEBHOOK] Вызываю addTrackToQueue для donationId:', donationId);
   try {
     await addTrackToQueue(donationId);
     console.log(`✅ [WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);

@@ -210,6 +210,7 @@ export function isTrackTooLong(duration: number | null, maxDuration: number = MA
 
 // Добавление трека в очередь (используется для webhook)
 export async function addTrackToQueue(donationId: string) {
+  console.log('💰 [ADD TO QUEUE] Начинаю добавление donationId:', donationId);
   console.log('💰 [ADD TO QUEUE] === НОВЫЙ ЗАПРОС ===');
   console.log('💰 [ADD TO QUEUE] donationId:', donationId);
   console.log(`💰 [ADD TO QUEUE] Начало добавления трека в очередь для donation_id=${donationId}`);
@@ -350,6 +351,7 @@ export async function addTrackToQueue(donationId: string) {
     console.error(`❌ [ADD TO QUEUE] SUPABASE_SERVICE_KEY:`, process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'MISSING');
     throw new Error('Failed to add to queue');
   }
+  console.log(`✅ [ADD TO QUEUE] Трек добавлен!`);
   console.log(`✅ [ADD TO QUEUE] Трек успешно добавлен в очередь!`);
   
   // Проверка: считываем добавленную запись из базы
