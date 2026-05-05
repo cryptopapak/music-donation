@@ -386,50 +386,40 @@ export async function addTrackToQueue(donationId: string) {
  * 3. Запускает новый трек со статусом 'playing'
  */
 export async function startPlayingTrack(queueId: string) {
-  console.log(`💰 [START PLAYING TRACK] === НОВЫЙ ЗАПРОС ===`);
-  console.log(`💰 [START PLAYING TRACK] queueId: ${queueId}`);
+  console.log('🔄 [START PLAYING] queueId:', queueId);
   
   const { supabaseAdmin } = await import('@/lib/supabase');
+  
+  // Сначала заверши все текущие playing треки
+  const { error: stopError } = await supabaseAdmin
+    .from('queue')
+    .update({ status: 'played', ended_at: new Date().toISOString() })
+    .eq('status', 'playing');
 
-  try {
-    // 1. Останавливаем всё, что сейчас играет
-    console.log(`💰 [START PLAYING TRACK] Останавливаю все треки со статусом 'playing'`);
-    console.log(`🔄 [STATUS CHANGE] Меняю статус с 'playing' на 'played' для всех текущих треков`);
-    const { error: stopError } = await supabaseAdmin
-      .from('queue')
-      .update({
-        status: 'played',
-        ended_at: new Date().toISOString()
-      })
-      .eq('status', 'playing');
+  if (stopError) {
+    console.error('❌ [START PLAYING] Остановка треков:', stopError);
+  }
+  
+  // Запусти новый трек
+  const { data, error } = await supabaseAdmin
+    .from('queue')
+    .update({
+      status: 'playing',
+      started_at: new Date().toISOString()
+    })
+    .eq('id', queueId)
+    .eq('status', 'pending')  // Важно! Только если статус pending
+    .select()
+    .single();
 
-    if (stopError) {
-      console.error('Error stopping playing tracks:', stopError);
-      throw new Error('Failed to stop playing tracks');
-    }
+  console.log('🔄 [START PLAYING] Результат:', JSON.stringify(data));
 
-    // 2. Запускаем новый трек
-    console.log(`💰 [START PLAYING TRACK] Запускаю трек ${queueId} со статусом 'playing'`);
-    console.log(`🔄 [STATUS CHANGE] Меняю статус на 'playing' для трека ${queueId}`);
-    const { error: startError } = await supabaseAdmin
-      .from('queue')
-      .update({
-        status: 'playing',
-        started_at: new Date().toISOString(),
-      })
-      .eq('id', queueId);
-
-    if (startError) {
-      console.error('Error starting track:', startError);
-      throw new Error('Failed to start track');
-    }
-
-    console.log(`✅ [START PLAYING TRACK] Трек ${queueId} успешно запущен!`);
-    return true;
-  } catch (error) {
-    console.error('Error in startPlayingTrack:', error);
+  if (error) {
+    console.error('❌ [START PLAYING] Ошибка:', error);
     throw error;
   }
+  
+  return data;
 }
 
 /**

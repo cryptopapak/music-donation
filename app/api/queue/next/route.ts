@@ -202,98 +202,50 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('💰 [QUEUE NEXT POST] === РУЧНОЙ ЗАПРОС ===');
-  
   try {
-    // Это ручной вызов, разрешаем запуск следующего трека
-    // Проверяем AFK и пропускаем текущий трек, если стример неактивен
-    const skippedAFK = await checkAndSkipAFK();
-    console.log(`💰 [QUEUE NEXT POST] skippedAFK: ${skippedAFK}`);
-
-    // Получаем тело запроса
-    const requestBody = await request.json();
-    let queueId = requestBody.queueId; // Если передан конкретный ID трека для воспроизведения
-
-    let nextQueueItem;
-    if (queueId) {
-      // Получаем конкретный трек по ID
-      console.log(`💰 [QUEUE NEXT POST] Запрошен конкретный трек ID: ${queueId}`);
-      const { data: specificQueueItem, error } = await supabaseAdmin
-        .from('queue')
-        .select(`
-          id,
-          status,
-          position,
-          priority_score,
-          votes_count,
-          tracks (
-            id,
-            url,
-            provider,
-            title,
-            artist,
-            thumbnail_url,
-            duration
-          )
-        `)
-        .eq('id', queueId)
-        .eq('status', 'pending')
-        .single();
-
-      if (error || !specificQueueItem) {
-        console.error('💰 [QUEUE NEXT POST] Ошибка при получении конкретного трека:', error);
-        return NextResponse.json(
-          { error: 'Track not found or not pending' },
-          { status: 404 }
-        );
-      }
-
-      nextQueueItem = specificQueueItem;
-    } else {
-      // Получаем следующий трек из очереди (автоматический выбор)
-      nextQueueItem = await getNextTrackFromQueue();
-      console.log(`💰 [QUEUE NEXT POST] nextQueueItem:`, nextQueueItem ? `id=${nextQueueItem.id}, status=${nextQueueItem.status}` : 'null');
+    const body = await request.json();
+    console.log('💰 [QUEUE NEXT POST] Тело запроса:', JSON.stringify(body));
+    
+    const { queueId } = body;
+    console.log('💰 [QUEUE NEXT POST] queueId из тела:', queueId);
+    
+    if (!queueId) {
+      console.error('❌ [QUEUE NEXT POST] queueId не передан!');
+      return NextResponse.json({ error: 'queueId required' }, { status: 400 });
     }
 
-    if (!nextQueueItem) {
-      console.log('💰 [QUEUE NEXT POST] Очередь пуста');
-      return NextResponse.json(
-        {
-          success: true,
-          queueItem: null,
-          message: skippedAFK ? 'Previous track skipped (AFK)' : 'Queue is empty',
-        },
-        { status: 200 }
-      );
+    // Перед запуском проверь, существует ли трек
+    const { data: queueItem, error: fetchError } = await supabaseAdmin
+      .from('queue')
+      .select('id, status, track_id')
+      .eq('id', queueId)
+      .single();
+    
+    console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
+    
+    if (fetchError || !queueItem) {
+      console.error('❌ [QUEUE NEXT POST] Трек не найден:', fetchError);
+      return NextResponse.json({ 
+        error: 'Track not found',
+        queueId,
+        fetchError 
+      }, { status: 404 });
+    }
+    
+    if (queueItem.status !== 'pending') {
+      console.error('❌ [QUEUE NEXT POST] Трек не в статусе pending:', queueItem.status);
+      return NextResponse.json({ 
+        error: `Track status is ${queueItem.status}, not pending` 
+      }, { status: 400 });
     }
 
-    // Обновляем статус трека на 'playing'
-    console.log(`💰 [QUEUE NEXT POST] Вызываю startPlayingTrack для queueId=${nextQueueItem.id}`);
-    const started = await startPlayingTrack(nextQueueItem.id);
-    console.log(`💰 [QUEUE NEXT POST] startPlayingTrack результат: ${started}`);
-
-    if (!started) {
-      console.error('💰 [QUEUE NEXT POST] Ошибка запуска трека');
-      return NextResponse.json(
-        { error: 'Failed to start track' },
-        { status: 500 }
-      );
-    }
-
-    console.log(`💰 [QUEUE NEXT POST] Трек успешно запущен!`);
-    return NextResponse.json(
-      {
-        success: true,
-        queueItem: nextQueueItem,
-        message: skippedAFK ? 'Previous track skipped (AFK), starting next' : 'Starting next track',
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error('Next queue item error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // Теперь запускай
+    const result = await startPlayingTrack(queueId);
+    console.log('✅ [QUEUE NEXT POST] Трек успешно запущен!');
+    
+    return NextResponse.json({ success: true, queueItem });
+  } catch (error: any) {
+    console.error('❌ [QUEUE NEXT POST] Ошибка:', error);
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }

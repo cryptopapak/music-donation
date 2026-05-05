@@ -168,6 +168,11 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         <div className="space-y-3">
           {queue.map((item) => {
             console.log('🎵 QueueList rendering track:', item);
+            console.log('🎨 [UI] Queue item:', {
+              id: item.id,           // UUID из queue
+              track_id: item.track_id,  // UUID из tracks
+              status: item.status
+            });
             return (
             <div
               key={item.id}
@@ -224,27 +229,24 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
               {item.status === 'pending' && (
                 <button
                   onClick={async () => {
-                    try {
-                      const response = await fetch('/api/queue/next', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ queueId: item.id }),
-                      });
-                      
-                      if (response.ok) {
-                        // Обновляем очередь после успешного запуска трека
-                        if (onRefetch) {
-                          onRefetch();
-                        } else {
-                          refetch();
-                        }
-                      } else {
-                        console.error('Ошибка при запуске трека:', await response.text());
-                      }
-                    } catch (error) {
-                      console.error('Ошибка при запуске трека:', error);
+                    console.log('🎵 [UI] Запуск трека:', item.id);
+                    
+                    const response = await fetch('/api/queue/next', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ queueId: item.id }),  // Важно! queueId, а не track_id!
+                    });
+                    
+                    if (!response.ok) {
+                      const error = await response.json();
+                      console.error('❌ [UI] Ошибка запуска:', error);
+                    }
+                    
+                    // Обновляем очередь после успешного запуска трека
+                    if (onRefetch) {
+                      onRefetch();
+                    } else {
+                      refetch();
                     }
                   }}
                   className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm"
