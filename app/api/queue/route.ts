@@ -32,6 +32,10 @@ export async function GET(request: NextRequest) {
     
     if (queueItems && queueItems.length > 0) {
       console.log('📦 [QUEUE API] Первая запись:', JSON.stringify(queueItems[0], null, 2));
+      
+      // Добавляем отладочную информацию
+      console.log('🔍 [DEBUG] track_id из queue:', queueItems[0].track_id);
+      console.log('🔍 [DEBUG] tracks данные:', queueItems[0].tracks);
     }
 
     return NextResponse.json({

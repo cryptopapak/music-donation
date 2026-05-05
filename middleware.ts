@@ -48,13 +48,20 @@ export async function updateSession(request: NextRequest) {
 export function middleware(request: NextRequest) {
   // Проверяем, является ли запрос защищенным API маршрутом
   const path = request.nextUrl.pathname;
-  const isQueueApi = path.startsWith('/api/queue/') && path !== '/api/queue/current';
+  const isQueueApi = path.startsWith('/api/queue/') && path !== '/api/queue/current' && path !== '/api/queue/next';
 
   // GET запросы к /api/queue/current разрешены без авторизации
   if (path === '/api/queue/current') {
     return updateSession(request);
   }
-
+  
+  // POST запросы к /api/queue/next разрешены без авторизации для кнопки "Играть"
+  if (path === '/api/queue/next' && request.method === 'POST') {
+    return NextResponse.next({
+      request,
+    });
+  }
+  
   // Для других /api/queue/* маршрутов требуем авторизацию
   if (isQueueApi) {
     return updateSession(request);

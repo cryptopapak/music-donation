@@ -10,40 +10,27 @@ interface Track {
   artist?: string | null;
   thumbnail_url?: string | null;
   duration?: number | null;
-  queueId: string;
-  status: string;
-  position: number;
-  priority_score: number;
-  votes_count: number;
+}
+
+interface Donation {
+  id: string;
+  amount: number;
+  donor_name?: string | null;
   created_at: string;
-  donation: {
-    id: string;
-    amount: number;
-    donor_name?: string | null;
-    created_at: string;
-  } | null;
 }
 
 interface QueueItem {
   id: string;
+  track_id: string;
   url: string;
   provider: string;
-  title?: string | null;
-  artist?: string | null;
-  thumbnail_url?: string | null;
-  duration?: number | null;
-  queueId: string;
   status: string;
   position: number;
   priority_score: number;
   votes_count: number;
   created_at: string;
-  donation: {
-    id: string;
-    amount: number;
-    donor_name?: string | null;
-    created_at: string;
-  } | null;
+  tracks?: Track | null;
+  donation: Donation | null;
 }
 
 interface QueueResponse {
@@ -209,10 +196,10 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
                   <span className="text-lg">{getProviderIcon(item.provider || '')}</span>
                   <div>
                     <p className="font-medium text-white truncate">
-                      {item.artist || 'Неизвестный исполнитель'}
+                      {item.tracks?.artist || 'Неизвестный исполнитель'}
                     </p>
                     <p className="text-sm text-slate-400 truncate">
-                      {item.title || 'Неизвестный трек'}
+                      {item.tracks?.title || 'Неизвестный трек'}
                     </p>
                   </div>
                 </div>
@@ -243,7 +230,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
                         headers: {
                           'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ queueId: item.queueId }),
+                        body: JSON.stringify({ queueId: item.id }),
                       });
                       
                       if (response.ok) {

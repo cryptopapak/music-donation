@@ -210,9 +210,50 @@ export async function POST(request: NextRequest) {
     const skippedAFK = await checkAndSkipAFK();
     console.log(`💰 [QUEUE NEXT POST] skippedAFK: ${skippedAFK}`);
 
-    // Получаем следующий трек из очереди
-    const nextQueueItem = await getNextTrackFromQueue();
-    console.log(`💰 [QUEUE NEXT POST] nextQueueItem:`, nextQueueItem ? `id=${nextQueueItem.id}, status=${nextQueueItem.status}` : 'null');
+    // Получаем тело запроса
+    const requestBody = await request.json();
+    let queueId = requestBody.queueId; // Если передан конкретный ID трека для воспроизведения
+
+    let nextQueueItem;
+    if (queueId) {
+      // Получаем конкретный трек по ID
+      console.log(`💰 [QUEUE NEXT POST] Запрошен конкретный трек ID: ${queueId}`);
+      const { data: specificQueueItem, error } = await supabaseAdmin
+        .from('queue')
+        .select(`
+          id,
+          status,
+          position,
+          priority_score,
+          votes_count,
+          tracks (
+            id,
+            url,
+            provider,
+            title,
+            artist,
+            thumbnail_url,
+            duration
+          )
+        `)
+        .eq('id', queueId)
+        .eq('status', 'pending')
+        .single();
+
+      if (error || !specificQueueItem) {
+        console.error('💰 [QUEUE NEXT POST] Ошибка при получении конкретного трека:', error);
+        return NextResponse.json(
+          { error: 'Track not found or not pending' },
+          { status: 404 }
+        );
+      }
+
+      nextQueueItem = specificQueueItem;
+    } else {
+      // Получаем следующий трек из очереди (автоматический выбор)
+      nextQueueItem = await getNextTrackFromQueue();
+      console.log(`💰 [QUEUE NEXT POST] nextQueueItem:`, nextQueueItem ? `id=${nextQueueItem.id}, status=${nextQueueItem.status}` : 'null');
+    }
 
     if (!nextQueueItem) {
       console.log('💰 [QUEUE NEXT POST] Очередь пуста');
