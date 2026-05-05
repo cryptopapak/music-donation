@@ -57,6 +57,49 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
+  const handlePlay = async (trackId: string) => {
+    console.log('🎯 [CLICK] trackId:', trackId);
+
+    setPlayingTrackId(trackId);
+
+    try {
+      const response = await fetch('/api/queue/next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueId: trackId })
+      });
+
+      if (response.status === 400) {
+        const errorData = await response.json();
+
+        console.warn('⚠️ [API 400]:', errorData);
+        alert(errorData.error || 'Трек уже обработан');
+
+        // 🔥 КРИТИЧНО: мгновенная синхронизация
+        await loadQueue();
+
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ [SUCCESS]:', data);
+
+      // Обновляем список после успешного запуска
+      await loadQueue();
+
+    } catch (error) {
+      console.error('❌ [ERROR]:', error);
+      alert('Ошибка при запуске трека');
+    } finally {
+      // 🔥 ГАРАНТИЯ: кнопка никогда не "залипнет"
+      setPlayingTrackId(null);
+    }
+  };
+
   const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
     try {
       setIsLoading(true);
@@ -272,55 +315,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
               {/* Кнопки управления */}
               {item.status === 'pending' && (
                 <button
-                  onClick={async () => {
-                    console.log('🎯 [CLICK] trackId:', item.id);
-                    console.log('🎯 BEFORE isPlaying:', playingTrackId);
-
-                    // Set loading state for this track
-                    setPlayingTrackId(item.id);
-
-                    console.log('🎯 AFTER isPlaying:', item.id);
-
-                    try {
-                      const response = await fetch('/api/queue/next', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ queueId: item.id }),  // Важно! queueId, а не track_id!
-                      });
-
-                      console.log('📡 [UI] Ответ от API:', response.status);
-
-                      if (response.status === 400) {
-                        const error = await response.json();
-
-                        console.error('❌ [API 400]:', error);
-
-                        alert(error.error || 'Трек уже обработан');
-
-                        // 🔥 КЛЮЧ: синхронизация UI с БД
-                        await loadQueue();
-
-                        return;
-                      }
-
-                      if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                      }
-
-                      const data = await response.json();
-                      console.log('✅ [SUCCESS]:', data);
-
-                      // обновление UI
-                      await loadQueue();
-
-                    } catch (error) {
-                      console.error('❌ [ERROR]:', error);
-                      alert('Ошибка при запуске трека');
-                    } finally {
-                      // всегда сбрасываем
-                      setPlayingTrackId(null);
-                    }
-                  }}
+                  onClick={() => handlePlay(item.id)}
                   disabled={playingTrackId === item.id}
                   className={`px-3 py-1 rounded text-sm ${
                     playingTrackId === item.id
