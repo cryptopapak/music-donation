@@ -273,24 +273,30 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
               {item.status === 'pending' && (
                 <button
                   onClick={async () => {
-                    console.log('🎵 [UI] Запуск трека:', item.id);
-                    
+                    console.log('🎯 CLICK trackId:', item.id);
+                    console.log('🎯 BEFORE isPlaying:', playingTrackId);
+
                     // Set loading state for this track
                     setPlayingTrackId(item.id);
-                    
+
+                    console.log('🎯 AFTER isPlaying:', item.id);
+
                     try {
                       const response = await fetch('/api/queue/next', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ queueId: item.id }),  // Важно! queueId, а не track_id!
                       });
-                      
+
+                      console.log('📡 [UI] Ответ от API:', response.status);
+
                       if (!response.ok) {
                         const error = await response.json();
                         console.error('❌ [UI] Ошибка запуска:', error);
                         // Reset loading state on error
                         setPlayingTrackId(null);
                       } else {
+                        console.log('✅ [UI] Трек успешно запущен');
                         // On success, refresh the queue
                         if (onRefetch) {
                           onRefetch();
