@@ -180,12 +180,19 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         </div>
       ) : (
         <div className="space-y-3">
+          {(() => {
+            console.log('🎨 [RENDER] tracks массив:', queue);
+            console.log('🎨 [RENDER] tracks.length:', queue?.length);
+            console.log('🎨 [RENDER] Первый трек:', queue?.[0]);
+            return null;
+          })()}
           {queue.map((item) => {
             console.log('🎵 QueueList rendering track:', item);
             console.log('🎨 [UI] Queue item:', {
               id: item.id,           // UUID из queue
               track_id: item.track_id,  // UUID из tracks
-              status: item.status
+              status: item.status,
+              tracks_data: item.tracks
             });
             return (
             <div

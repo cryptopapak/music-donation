@@ -12,12 +12,23 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 [QUEUE API] Запрос: limit=${limit}, offset=${offset}, status=${status}`);
 
+    // Get the total count separately
+    const { count, error: countError } = await supabaseAdmin
+      .from('queue')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', status);
+
+    if (countError) {
+      console.error('❌ [QUEUE API] Ошибка получения общего количества:', countError);
+      return NextResponse.json({ error: countError.message }, { status: 500 });
+    }
+
     const { data: queueItems, error } = await supabaseAdmin
       .from('queue')
       .select(`
         *,
         tracks:track_id (id, url, title, artist, thumbnail_url),
-        donations:donation_id (id, donor_name, amount)
+        donation:donation_id (id, donor_name, amount)
       `)
       .eq('status', status)
       .order('created_at', { ascending: true })
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log(`📊 [QUEUE API] Найдено записей: ${queueItems?.length || 0}`);
+    console.log(`📊 [QUEUE API] Найдено записей: ${queueItems?.length || 0}, всего: ${count || 0}`);
     
     if (queueItems && queueItems.length > 0) {
       console.log('📦 [QUEUE API] Первая запись:', JSON.stringify(queueItems[0], null, 2));
@@ -41,8 +52,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       tracks: queueItems || [],
-      total: queueItems?.length || 0,
-      hasMore: (queueItems?.length || 0) === limit,
+      total: count || 0,
+      hasMore: (count || 0) > (offset + (queueItems?.length || 0)),
     });
   } catch (error) {
     console.error('❌ [QUEUE API] Ошибка:', error);
