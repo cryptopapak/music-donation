@@ -54,24 +54,39 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [error, setError] = useState<string>('');
   const [limit, setLimit] = useState<number>(20);
   const [offset, setOffset] = useState<number>(0);
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
     try {
       setIsLoading(true);
+      
+      // Cancel any previous request
+      if (abortController) {
+        abortController.abort();
+      }
+      
+      // Create new AbortController for this request
+      const controller = new AbortController();
+      setAbortController(controller);
+
       console.log('🔍 Загрузка очереди: offset=', newOffset, 'limit=', newLimit);
-      const response = await fetch(`/api/queue?limit=${newLimit}&offset=${newOffset}`, {
+      const response = await fetch(`/api/queue?status=pending&limit=${newLimit}&offset=${newOffset}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
           'Pragma': 'no-cache',
         },
+        signal: controller.signal
       });
+      
       const data: QueueResponse = await response.json();
       console.log('📦 Ответ от API:', data);
       console.log('📦 Полный ответ от API (raw):', JSON.stringify(data, null, 2));
 
       if (data.success) {
-        setQueue(data.tracks);
+        // Completely replace the queue state to avoid sync issues
+        setQueue([...data.tracks]);
         setOffset(newOffset);
         setLimit(newLimit);
         console.log('✅ Очередь загружена:', data.tracks.length, 'треков');
@@ -79,30 +94,38 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         setError(data.error || 'Ошибка при загрузке очереди');
         console.error('❌ Ошибка загрузки очереди:', data.error);
       }
-    } catch (err) {
-      console.error('Error loading queue:', err);
-      setError('Не удалось загрузить очередь');
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log('Fetch cancelled');
+      } else {
+        console.error('Error loading queue:', err);
+        setError('Не удалось загрузить очередь');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [offset, limit, setQueue, setIsLoading, setError]);
+  }, [offset, limit]);
 
+  // Single useEffect for polling with AbortController to prevent memory leaks
   useEffect(() => {
     console.log('🔄 [POLLING] Начинаю опрос очереди...');
     
     // Сразу загружаем
     loadQueue();
     
-    // И настраиваем polling каждые 5 секунд
+    // И настраиваем polling каждые 10 секунд (changed from 5 to 10 seconds)
     const interval = setInterval(() => {
       console.log('🔄 [POLLING] Обновление очереди...');
       loadQueue();
-    }, 5000);
+    }, 10000); // Changed from 5000ms to 10000ms
     
     // Очистка при размонтировании
     return () => {
       console.log('🔄 [POLLING] Остановка polling');
       clearInterval(interval);
+      if (abortController) {
+        abortController.abort();
+      }
     };
   }, []); // Пустой массив - запускается один раз при монтировании
 
@@ -150,7 +173,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-white">🎵 Очередь треков</h2>
         <span className="px-3 py-1 bg-slate-700 rounded-full text-sm text-slate-300">
-          {queue.length} из {queue.length} треков
+          {queue.length} треков
         </span>
       </div>
 
@@ -252,27 +275,43 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
                   onClick={async () => {
                     console.log('🎵 [UI] Запуск трека:', item.id);
                     
-                    const response = await fetch('/api/queue/next', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ queueId: item.id }),  // Важно! queueId, а не track_id!
-                    });
+                    // Set loading state for this track
+                    setPlayingTrackId(item.id);
                     
-                    if (!response.ok) {
-                      const error = await response.json();
-                      console.error('❌ [UI] Ошибка запуска:', error);
-                    }
-                    
-                    // Обновляем очередь после успешного запуска трека
-                    if (onRefetch) {
-                      onRefetch();
-                    } else {
-                      refetch();
+                    try {
+                      const response = await fetch('/api/queue/next', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ queueId: item.id }),  // Важно! queueId, а не track_id!
+                      });
+                      
+                      if (!response.ok) {
+                        const error = await response.json();
+                        console.error('❌ [UI] Ошибка запуска:', error);
+                        // Reset loading state on error
+                        setPlayingTrackId(null);
+                      } else {
+                        // On success, refresh the queue
+                        if (onRefetch) {
+                          onRefetch();
+                        } else {
+                          refetch();
+                        }
+                      }
+                    } catch (err) {
+                      console.error('❌ [UI] Ошибка при запуске трека:', err);
+                      // Reset loading state on error
+                      setPlayingTrackId(null);
                     }
                   }}
-                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm"
+                  disabled={playingTrackId === item.id}
+                  className={`px-3 py-1 rounded text-sm ${
+                    playingTrackId === item.id
+                      ? 'bg-indigo-400 text-gray-300 cursor-not-allowed'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  }`}
                 >
-                  ▶️ Играть
+                  {playingTrackId === item.id ? '▶️ Запуск...' : '▶️ Играть'}
                 </button>
               )}
               {item.status === 'playing' && (

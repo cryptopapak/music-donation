@@ -6,6 +6,9 @@ import { startPlayingTrack as dbStartPlayingTrack, getCurrentPlayingTrack } from
 const AFK_TIMEOUT_SECONDS = 300; // 5 минут без heartbeat
 const HEARTBEAT_INTERVAL_SECONDS = 30; // Heartbeat каждые 30 секунд
 
+// Variable to track currently processing queueId to prevent duplicate requests
+let processingQueueId: string | null = null;
+
 /**
  * Проверяет, активен ли стример (не AFK)
  */
@@ -40,7 +43,7 @@ async function getNextTrackFromQueue() {
   try {
     console.log('💰 [GET NEXT TRACK] === НОВЫЙ ЗАПРОС ===');
     console.log('💰 [GET NEXT TRACK] Ищу трек со статусом pending...');
-    
+
     // Получаем следующий трек из очереди (статус 'pending', по priority_score descending)
     const { data: queueItem, error } = await supabaseAdmin
       .from('queue')
@@ -69,7 +72,7 @@ async function getNextTrackFromQueue() {
     if (error) {
       console.error('💰 [GET NEXT TRACK] Ошибка при получении трека:', error);
     }
-    
+
     console.log(`💰 [GET NEXT TRACK] Найден трек:`, queueItem ? `id=${queueItem.id}, status=${queueItem.status}` : 'null');
 
     if (error || !queueItem) {
@@ -191,9 +194,9 @@ async function checkAndSkipAFK() {
 export async function GET(request: NextRequest) {
   // Только проверяем AFK и показываем следующий трек
   await checkAndSkipAFK();
-  
+
   const nextQueueItem = await getNextTrackFromQueue();
-  
+
   return NextResponse.json({
     success: true,
     queueItem: nextQueueItem,
@@ -205,46 +208,74 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     console.log('💰 [QUEUE NEXT POST] Тело запроса:', JSON.stringify(body));
-    
+
     const { queueId } = body;
     console.log('💰 [QUEUE NEXT POST] queueId из тела:', queueId);
-    
+
     if (!queueId) {
       console.error('❌ [QUEUE NEXT POST] queueId не передан!');
       return NextResponse.json({ error: 'queueId required' }, { status: 400 });
     }
 
-    // Перед запуском проверь, существует ли трек
-    const { data: queueItem, error: fetchError } = await supabaseAdmin
-      .from('queue')
-      .select('id, status, track_id')
-      .eq('id', queueId)
-      .single();
-    
-    console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
-    
-    if (fetchError || !queueItem) {
-      console.error('❌ [QUEUE NEXT POST] Трек не найден:', fetchError);
+    // Check if the same request is already being processed
+    if (processingQueueId === queueId) {
+      console.log(`🎵 [QUEUE NEXT POST] Request for queueId ${queueId} is already processing`);
       return NextResponse.json({ 
-        error: 'Track not found',
-        queueId,
-        fetchError 
-      }, { status: 404 });
-    }
-    
-    if (queueItem.status !== 'pending') {
-      console.error('❌ [QUEUE NEXT POST] Трек не в статусе pending:', queueItem.status);
-      return NextResponse.json({ 
-        error: `Track status is ${queueItem.status}, not pending` 
-      }, { status: 400 });
+        error: 'Request is already in progress' 
+      }, { status: 429 }); // Too Many Requests
     }
 
-    // Теперь запускай
-    const result = await startPlayingTrack(queueId);
-    console.log('✅ [QUEUE NEXT POST] Трек успешно запущен!');
-    
-    return NextResponse.json({ success: true, queueItem });
+    // Mark the request as being processed
+    processingQueueId = queueId;
+
+    try {
+      // Перед запуском проверь, существует ли трек
+      const { data: queueItem, error: fetchError } = await supabaseAdmin
+        .from('queue')
+        .select('id, status, track_id')
+        .eq('id', queueId)
+        .single();
+
+      console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
+
+      if (fetchError || !queueItem) {
+        console.error('❌ [QUEUE NEXT POST] Трек не найден:', fetchError);
+        return NextResponse.json({ 
+          error: 'Track not found',
+          queueId,
+          fetchError 
+        }, { status: 404 });
+      }
+
+      // Check if track is already in a played or playing status
+      if (queueItem.status === 'played' || queueItem.status === 'playing') {
+        console.error(`❌ [QUEUE NEXT POST] Трек уже в статусе ${queueItem.status}`);
+        return NextResponse.json({ 
+          error: `Track is already ${queueItem.status}. Please refresh queue.` 
+        }, { status: 400 });
+      }
+
+      if (queueItem.status !== 'pending') {
+        console.error('❌ [QUEUE NEXT POST] Трек не в статусе pending:', queueItem.status);
+        return NextResponse.json({ 
+          error: `Track status is ${queueItem.status}, not pending` 
+        }, { status: 400 });
+      }
+
+      // Теперь запускай
+      const result = await startPlayingTrack(queueId);
+      console.log('✅ [QUEUE NEXT POST] Трек успешно запущен!');
+
+      return NextResponse.json({ success: true, queueItem });
+    } finally {
+      // Clear the processing flag after request completes (success or error)
+      if (processingQueueId === queueId) {
+        processingQueueId = null;
+      }
+    }
   } catch (error: any) {
+    // Clear the processing flag if there's an exception
+    processingQueueId = null;
     console.error('❌ [QUEUE NEXT POST] Ошибка:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
