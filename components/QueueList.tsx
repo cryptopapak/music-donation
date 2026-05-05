@@ -49,6 +49,10 @@ interface QueueListProps {
 
 export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
   console.log('🎵 QueueList component rendered');
+  
+  const POLLING_INTERVAL = 15000; // 15 секунд
+  const MIN_UPDATE_INTERVAL = 3000; // анти-спам
+  
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -56,6 +60,8 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [offset, setOffset] = useState<number>(0);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  
+  let lastUpdateTime = 0;
 
   // State watcher to monitor changes
   useEffect(() => {
@@ -63,9 +69,6 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   }, [playingTrackId]);
 
   const handlePlay = async (queueId: string) => {
-    console.log('🎯 [CLICK] queueId:', queueId);
-    console.log('🎯 [STATE BEFORE]:', playingTrackId);
-
     setPlayingTrackId(queueId);
 
     try {
@@ -75,18 +78,17 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         body: JSON.stringify({ queueId })
       });
 
-      console.log('📡 [RESPONSE STATUS]:', response.status);
-
       if (response.status === 400) {
         const errorData = await response.json();
 
         console.warn('⚠️ [API 400]:', errorData);
         alert(errorData.error || 'Трек уже обработан');
 
-        console.log('🔄 [SYNC] loadQueue after 400');
-        // 🔥 Принудительный сброс перед синхронизацией
-        setPlayingTrackId(null);
-        await loadQueue();
+        // ❗ НЕ дергаем мгновенно (избегаем гонки)
+        setTimeout(() => {
+          console.log('🔄 [DELAYED SYNC]');
+          loadQueue();
+        }, 2000);
 
         return;
       }
@@ -95,26 +97,30 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         throw new Error(`HTTP ${response.status}`);
       }
 
-      console.log('✅ [SUCCESS]');
       await loadQueue();
 
     } catch (error) {
-      console.error('❌ [ERROR]:', error);
-      alert('Ошибка запуска');
+      console.error('❌ [PLAY ERROR]:', error);
     } finally {
-      console.log('🔓 [FINALLY] before reset:', playingTrackId);
-
-      // 🔥 КРИТИЧЕСКИЙ ФИКС: сброс через функцию (анти-stale)
-      setPlayingTrackId(prev => {
-        console.log('🔓 [FINALLY] prev state:', prev);
-        return null;
-      });
-
-      console.log('🔓 [FINALLY] reset done');
+      setPlayingTrackId(null);
     }
   };
 
   const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
+    const now = Date.now();
+
+    if (isLoading) {
+      console.log('⛔ [LOAD] Уже загружается — пропуск');
+      return;
+    }
+
+    if (now - lastUpdateTime < MIN_UPDATE_INTERVAL) {
+      console.log('⏳ [LOAD] Слишком частое обновление — пропуск');
+      return;
+    }
+
+    lastUpdateTime = now;
+    
     try {
       setIsLoading(true);
       
@@ -127,7 +133,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       const controller = new AbortController();
       setAbortController(controller);
 
-      console.log('🔍 Загрузка очереди: offset=', newOffset, 'limit=', newLimit);
+      console.log('📡 [LOAD] Запрос очереди...');
       const response = await fetch(`/api/queue?status=pending&limit=${newLimit}&offset=${newOffset}`, {
         cache: 'no-store',
         headers: {
@@ -138,7 +144,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       });
       
       const data: QueueResponse = await response.json();
-      console.log('📦 Ответ от API:', data);
+      console.log('✅ [LOAD] Данные получены:', data);
       console.log('📦 Полный ответ от API (raw):', JSON.stringify(data, null, 2));
 
       if (data.success) {
@@ -165,26 +171,32 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
   // Single useEffect for polling with AbortController to prevent memory leaks
   useEffect(() => {
-    console.log('🔄 [POLLING] Начинаю опрос очереди...');
-    
-    // Сразу загружаем
+    console.log('🚀 [INIT] Первый запрос');
+
     loadQueue();
-    
-    // И настраиваем polling каждые 10 секунд (changed from 5 to 10 seconds)
-    const interval = setInterval(() => {
-      console.log('🔄 [POLLING] Обновление очереди...');
+
+    const intervalId = setInterval(() => {
       loadQueue();
-    }, 10000); // Changed from 5000ms to 10000ms
-    
-    // Очистка при размонтировании
+    }, POLLING_INTERVAL);
+
     return () => {
-      console.log('🔄 [POLLING] Остановка polling');
-      clearInterval(interval);
+      clearInterval(intervalId);
+      console.log('🧹 [CLEANUP] polling остановлен');
       if (abortController) {
         abortController.abort();
       }
     };
-  }, []); // Пустой массив - запускается один раз при монтировании
+  }, []);
+
+  // Периодическая "жёсткая" синхронизация
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      console.log('🔄 [SYNC] Принудительное обновление');
+      loadQueue();
+    }, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, []);
 
   const refetch = async () => {
     await loadQueue(offset, limit);
