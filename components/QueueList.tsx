@@ -149,15 +149,15 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
       console.log('✅ Очередь загружена:', tracks.length, 'треков');
 
-      setQueue(tracks);
+      setQueue(tracks);          // ✅ СНАЧАЛА данные
       setTotal(data.total || 0);
 
     } catch (error) {
       console.error('❌ [LOAD ERROR]:', error);
 
     } finally {
+      setIsLoading(false);       // ✅ ПОТОМ loading
       console.log('🔓 [LOAD] reset isLoading');
-      setIsLoading(false);
     }
   }, [isLoading]); // Added dependency array that includes isLoading
 
@@ -219,9 +219,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   };
 
   // Добавляем диагностику рендера перед return
-  console.log('🎨 [RENDER] isLoading:', isLoading);
-  console.log('🎨 [RENDER] queue:', queue);
-  console.log('🎨 [RENDER] length:', queue?.length);
+  console.log('🔍 [DEBUG RENDER] isLoading:', isLoading);
+  console.log('🔍 [DEBUG RENDER] queue:', queue);
+  console.log('🔍 [DEBUG RENDER] queue.length:', queue?.length);
 
   // ИСПРАВЛЕННАЯ логика рендера: 
   // Показываем "Загрузка очереди..." только если isLoading=true И очередь пуста
