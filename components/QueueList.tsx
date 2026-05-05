@@ -41,6 +41,13 @@ interface QueueResponse {
   error?: string;
 }
 
+// Debug logging helper
+const logRenderState = (isLoading: boolean, queue: QueueItem[]) => {
+  console.log('🎨 [RENDER] isLoading:', isLoading);
+  console.log('🎨 [RENDER] queue:', queue);
+  console.log('🎨 [RENDER] length:', queue?.length);
+};
+
 interface QueueListProps {
   className?: string;
   onRefetch?: () => void;
@@ -56,6 +63,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [total, setTotal] = useState<number>(0);
   const [limit, setLimit] = useState<number>(20);
   const [offset, setOffset] = useState<number>(0);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
@@ -114,73 +122,44 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     }
   };
 
+  // Fixed loadQueue function - following the exact specification
   const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
-    const now = Date.now();
-
     if (isLoading) {
       console.log('⛔ [LOAD] Уже загружается — пропуск');
       return;
     }
 
-    if (now - lastUpdateTime < MIN_UPDATE_INTERVAL) {
-      console.log('⏳ [LOAD] Слишком частое обновление — пропуск');
-      return;
-    }
-
-    lastUpdateTime = now;
-    
+    console.log('🚀 [LOAD] start');
     setIsLoading(true);
 
     try {
-      // Cancel any previous request
-      if (abortController) {
-        abortController.abort();
-      }
-      
-      // Create new AbortController for this request
-      const controller = new AbortController();
-      setAbortController(controller);
-
-      console.log('🚀 [LOAD] Старт загрузки');
-      const response = await fetch(`/api/queue?status=pending&limit=${newLimit}&offset=${newOffset}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-        },
-        signal: controller.signal
-      });
+      const response = await fetch(`/api/queue?status=pending&offset=${newOffset}&limit=${newLimit}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
-      const data: QueueResponse = await response.json();
-      console.log('✅ [LOAD] Успех:', data);
 
-      if (data.success) {
-        // Completely replace the queue state to avoid sync issues
-        setQueue([...data.tracks]);
-        setOffset(newOffset);
-        setLimit(newLimit);
-        console.log('✅ Очередь загружена:', data.tracks.length, 'треков');
-      } else {
-        setError(data.error || 'Ошибка при загрузке очереди');
-        console.error('❌ Ошибка загрузки очереди:', data.error);
-      }
-    } catch (err: any) {
-      console.error('❌ [LOAD] Ошибка:', err);
+      const data = await response.json();
 
-      if (err.name !== 'AbortError') {
-        console.error('Error loading queue:', err);
-        setError('Не удалось загрузить очередь');
-      }
+      console.log('📦 RAW DATA:', data);
+      console.log('📦 TRACKS:', data.tracks);
+
+      // 🔥 КРИТИЧНО: правильная структура
+      const tracks = Array.isArray(data.tracks) ? data.tracks : [];
+
+      console.log('✅ Очередь загружена:', tracks.length, 'треков');
+
+      setQueue(tracks);
+      setTotal(data.total || 0);
+
+    } catch (error) {
+      console.error('❌ [LOAD ERROR]:', error);
+
     } finally {
-      // 🔥 ГАРАНТИЯ: всегда сбрасываем
-      console.log('🔓 [LOAD] Сброс isLoading');
+      console.log('🔓 [LOAD] reset isLoading');
       setIsLoading(false);
     }
-  }, [offset, limit]);
+  }, [isLoading]); // Added dependency array that includes isLoading
 
   // Single useEffect for polling with AbortController to prevent memory leaks
   useEffect(() => {
@@ -239,7 +218,14 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     }
   };
 
-  if (isLoading) {
+  // Добавляем диагностику рендера перед return
+  console.log('🎨 [RENDER] isLoading:', isLoading);
+  console.log('🎨 [RENDER] queue:', queue);
+  console.log('🎨 [RENDER] length:', queue?.length);
+
+  // ИСПРАВЛЕННАЯ логика рендера: 
+  // Показываем "Загрузка очереди..." только если isLoading=true И очередь пуста
+  if (isLoading && queue.length === 0) {
     return (
       <div className={`card ${className}`}>
         <h2 className="text-xl font-semibold mb-4 text-white">🎵 Очередь треков</h2>
@@ -265,32 +251,8 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         </div>
       )}
 
-      {queue.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-          <svg
-            className="w-12 h-12 mb-2 opacity-50"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <p>Очередь пуста</p>
-          <p className="text-sm mt-2">Сделайте донат, чтобы добавить трек</p>
-        </div>
-      ) : (
+      {(queue && queue.length > 0) ? (
         <div className="space-y-3">
-          {(() => {
-            console.log('🎨 [RENDER] tracks массив:', queue);
-            console.log('🎨 [RENDER] tracks.length:', queue?.length);
-            console.log('🎨 [RENDER] Первый трек:', queue?.[0]);
-            return null;
-          })()}
           {queue.map((item) => {
             console.log('🎵 QueueList rendering track:', item);
             console.log('🎨 [UI] Queue item:', {
@@ -376,6 +338,24 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
             </div>
             );
           })}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+          <svg
+            className="w-12 h-12 mb-2 opacity-50"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <p>Очередь пуста</p>
+          <p className="text-sm mt-2">Сделайте донат, чтобы добавить трек</p>
         </div>
       )}
 
