@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface Track {
   id: string;
@@ -55,7 +55,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const [limit, setLimit] = useState<number>(20);
   const [offset, setOffset] = useState<number>(0);
 
-  const loadQueue = async (newOffset: number = offset, newLimit: number = limit) => {
+  const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
     try {
       setIsLoading(true);
       console.log('🔍 Загрузка очереди: offset=', newOffset, 'limit=', newLimit);
@@ -85,12 +85,26 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [offset, limit, setQueue, setIsLoading, setError]);
 
   useEffect(() => {
-    console.log('🔄 QueueList useEffect triggered');
+    console.log('🔄 [POLLING] Начинаю опрос очереди...');
+    
+    // Сразу загружаем
     loadQueue();
-  }, [refetchKey]);
+    
+    // И настраиваем polling каждые 5 секунд
+    const interval = setInterval(() => {
+      console.log('🔄 [POLLING] Обновление очереди...');
+      loadQueue();
+    }, 5000);
+    
+    // Очистка при размонтировании
+    return () => {
+      console.log('🔄 [POLLING] Остановка polling');
+      clearInterval(interval);
+    };
+  }, []); // Пустой массив - запускается один раз при монтировании
 
   const refetch = async () => {
     await loadQueue(offset, limit);
