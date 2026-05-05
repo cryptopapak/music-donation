@@ -41,6 +41,10 @@ interface QueueResponse {
   error?: string;
 }
 
+// Helper functions for fallback when API JOIN fails
+const getTrackTitle = (item: QueueItem) => item.tracks?.title ?? (item as any).title ?? 'Неизвестный трек';
+const getTrackArtist = (item: QueueItem) => item.tracks?.artist ?? (item as any).artist ?? 'Неизвестный исполнитель';
+
 // Debug logging helper
 const logRenderState = (isLoading: boolean, queue: QueueItem[]) => {
   console.log('🎨 [RENDER] isLoading:', isLoading);
@@ -61,7 +65,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   const MIN_UPDATE_INTERVAL = 3000; // анти-спам
   
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  // Bug #1 fix: split isLoading into a ref for checking and state for UI
+  const isLoadingRef = useRef(false);
+  const [isLoadingUI, setIsLoadingUI] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [total, setTotal] = useState<number>(0);
   const [limit, setLimit] = useState<number>(20);
@@ -71,16 +77,8 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   
   const lastUpdateTimeRef = useRef(0);
 
-  // State watcher to monitor changes
-  useEffect(() => {
-    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
-  }, [playingTrackId]);
-
-  // Debug useEffect for isLoading
-  useEffect(() => {
-    console.log('👀 [WATCH] isLoading changed:', isLoading);
-  }, [isLoading]);
-
+  // Bug #2 fix: store loadQueue in a ref that updates every render
+  const loadQueueRef = useRef<Function>(() => {});
 
   // State watcher to monitor changes
   useEffect(() => {
@@ -89,14 +87,25 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
 
   // Debug useEffect for isLoading
   useEffect(() => {
-    console.log('👀 [WATCH] isLoading changed:', isLoading);
-  }, [isLoading]);
+    console.log('👀 [WATCH] isLoadingUI changed:', isLoadingUI);
+  }, [isLoadingUI]);
+
+
+  // State watcher to monitor changes
+  useEffect(() => {
+    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
+  }, [playingTrackId]);
+
+  // Debug useEffect for isLoading
+  useEffect(() => {
+    console.log('👀 [WATCH] isLoadingUI changed:', isLoadingUI);
+  }, [isLoadingUI]);
 
   // Cleanup: ensure isLoading is reset when component unmounts
   useEffect(() => {
     return () => {
       console.log('🧹 [CLEANUP] reset isLoading');
-      setIsLoading(false);
+      setIsLoadingUI(false);
     };
   }, []);
 
@@ -116,10 +125,12 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         console.warn('⚠️ [API 400]:', errorData);
         alert(errorData.error || 'Трек уже обработан');
 
+        // Bug #3 fix: reset anti-spam timer before forced reload after 400 error
+        lastUpdateTimeRef.current = 0;
         // ❗ НЕ дергаем мгновенно (избегаем гонки)
         setTimeout(() => {
           console.log('🔄 [DELAYED SYNC]');
-          loadQueue();
+          loadQueueRef.current();
         }, 2000);
 
         return;
@@ -129,7 +140,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         throw new Error(`HTTP ${response.status}`);
       }
 
-      await loadQueue();
+      // Bug #3 fix: reset anti-spam timer before forced reload after success
+      lastUpdateTimeRef.current = 0;
+      await loadQueueRef.current();
 
     } catch (error) {
       console.error('❌ [PLAY ERROR]:', error);
@@ -138,8 +151,8 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     }
   };
 
-  // Fixed loadQueue function - following the exact specification
-  const loadQueue = useCallback(async (newOffset: number = offset, newLimit: number = limit) => {
+  // Fixed loadQueue function - no useCallback to avoid stale closure bug (#2)
+  const loadQueue = async (newOffset: number = offset, newLimit: number = limit) => {
     // Anti-spam проверка
     const now = Date.now();
     if (now - lastUpdateTimeRef.current < MIN_UPDATE_INTERVAL) {
@@ -147,14 +160,17 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       return;
     }
     
-    if (isLoading) {
+    // Bug #1 fix: check isLoading using ref instead of stale closure
+    if (isLoadingRef.current) {
       console.log('⛔ [LOAD] Уже загружается — пропуск');
       return;
     }
 
     console.log('🚀 [LOAD] Начинаю загрузку...');
     lastUpdateTimeRef.current = now;
-    setIsLoading(true);
+    // Bug #1 fix: set both ref and UI state
+    isLoadingRef.current = true;
+    setIsLoadingUI(true);
 
     try {
       console.log('📡 [API] Запрос к /api/queue...');
@@ -180,18 +196,25 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     } finally {
       // КРИТИЧНО: ВСЕГДА сбрасывай isLoading!
       console.log('🔓 [LOAD] Сбрасываю isLoading');
-      setIsLoading(false);
+      // Bug #1 fix: reset both ref and UI state
+      isLoadingRef.current = false;
+      setIsLoadingUI(false);
     }
-  }, [isLoading, offset, limit]); // Updated dependency array
+  };
 
-  // Single useEffect for polling with AbortController to prevent memory leaks
+  // Update the ref with the latest loadQueue function - Bug #2 fix
+  useEffect(() => {
+    loadQueueRef.current = loadQueue;
+  }); // no deps = runs every render
+
+  // Single useEffect for polling with AbortController to prevent memory leaks - Bug #2 fix: use ref version
   useEffect(() => {
     console.log('🚀 [INIT] Первый запрос');
 
     loadQueue();
 
     const intervalId = setInterval(() => {
-      loadQueue();
+      loadQueueRef.current();
     }, POLLING_INTERVAL);
 
     return () => {
@@ -203,17 +226,31 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
     };
   }, []);
 
-  // Периодическая "жёсткая" синхронизация
+  // Периодическая "жёсткая" синхронизация - Bug #2 fix: use ref version
   useEffect(() => {
     const syncInterval = setInterval(() => {
       console.log('🔄 [SYNC] Принудительное обновление');
-      loadQueue();
+      // Bug #3 fix: reset anti-spam timer before forced reload
+      lastUpdateTimeRef.current = 0;
+      loadQueueRef.current();
     }, 30000);
 
     return () => clearInterval(syncInterval);
   }, []);
 
+  // Handle external refetch triggers
+  useEffect(() => {
+    // Bug #3 fix: reset anti-spam timer before forced reload from refetchKey
+    lastUpdateTimeRef.current = 0;
+    loadQueue(offset, limit);
+    if (onRefetch) {
+      onRefetch();
+    }
+  }, [refetchKey]); // Refetch when refetchKey changes
+
   const refetch = async () => {
+    // Bug #3 fix: reset anti-spam timer before forced reload
+    lastUpdateTimeRef.current = 0;
     await loadQueue(offset, limit);
     if (onRefetch) {
       onRefetch();
@@ -242,13 +279,13 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
   };
 
   // Добавляем диагностику рендера перед return
-  console.log('🔍 [DEBUG RENDER] isLoading:', isLoading);
+  console.log('🔍 [DEBUG RENDER] isLoadingUI:', isLoadingUI);
   console.log('🔍 [DEBUG RENDER] queue:', queue);
   console.log('🔍 [DEBUG RENDER] queue.length:', queue?.length);
 
   // ИСПРАВЛЕННАЯ логика рендера: 
   // Показываем "Загрузка очереди..." только если isLoading=true И очередь пуста
-  if (isLoading && queue.length === 0) {
+  if (isLoadingUI && queue.length === 0) {
     return (
       <div className={`card ${className}`}>
         <h2 className="text-xl font-semibold mb-4 text-white">🎵 Очередь треков</h2>
@@ -312,10 +349,10 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
                   <span className="text-lg">{getProviderIcon(item.provider || '')}</span>
                   <div>
                     <p className="font-medium text-white truncate">
-                      {item.tracks?.artist || 'Неизвестный исполнитель'}
+                      {getTrackArtist(item)} {/* Bug #4 fix: use helper with fallback */}
                     </p>
                     <p className="text-sm text-slate-400 truncate">
-                      {item.tracks?.title || 'Неизвестный трек'}
+                      {getTrackTitle(item)} {/* Bug #4 fix: use helper with fallback */}
                     </p>
                   </div>
                 </div>
