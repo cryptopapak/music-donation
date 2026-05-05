@@ -38,6 +38,9 @@ async function isStreamerActive(streamerId: string): Promise<boolean> {
  */
 async function getNextTrackFromQueue() {
   try {
+    console.log('💰 [GET NEXT TRACK] === НОВЫЙ ЗАПРОС ===');
+    console.log('💰 [GET NEXT TRACK] Ищу трек со статусом pending...');
+    
     // Получаем следующий трек из очереди (статус 'pending', по priority_score descending)
     const { data: queueItem, error } = await supabaseAdmin
       .from('queue')
@@ -64,13 +67,19 @@ async function getNextTrackFromQueue() {
       .single();
 
     if (error) {
-      console.error('Next track fetch error:', error);
+      console.error('💰 [GET NEXT TRACK] Ошибка при получении трека:', error);
+    }
+    
+    console.log(`💰 [GET NEXT TRACK] Найден трек:`, queueItem ? `id=${queueItem.id}, status=${queueItem.status}` : 'null');
+
+    if (error || !queueItem) {
+      console.log('💰 [GET NEXT TRACK] Трек не найден');
       return null;
     }
 
     return queueItem;
   } catch (error) {
-    console.error('Error getting next track:', error);
+    console.error('💰 [GET NEXT TRACK] Error getting next track:', error);
     return null;
   }
 }
@@ -180,16 +189,35 @@ async function checkAndSkipAFK() {
 }
 
 export async function GET(request: NextRequest) {
+  // Только проверяем AFK и показываем следующий трек
+  await checkAndSkipAFK();
+  
+  const nextQueueItem = await getNextTrackFromQueue();
+  
+  return NextResponse.json({
+    success: true,
+    queueItem: nextQueueItem,
+    message: 'Next track info (NOT started)',
+  });
+}
+
+export async function POST(request: NextRequest) {
+  console.log('💰 [QUEUE NEXT POST] === РУЧНОЙ ЗАПРОС ===');
+  
   try {
+    // Это ручной вызов, разрешаем запуск следующего трека
     // Проверяем AFK и пропускаем текущий трек, если стример неактивен
     const skippedAFK = await checkAndSkipAFK();
+    console.log(`💰 [QUEUE NEXT POST] skippedAFK: ${skippedAFK}`);
 
     // Получаем следующий трек из очереди
     const nextQueueItem = await getNextTrackFromQueue();
+    console.log(`💰 [QUEUE NEXT POST] nextQueueItem:`, nextQueueItem ? `id=${nextQueueItem.id}, status=${nextQueueItem.status}` : 'null');
 
     if (!nextQueueItem) {
+      console.log('💰 [QUEUE NEXT POST] Очередь пуста');
       return NextResponse.json(
-        { 
+        {
           success: true,
           queueItem: null,
           message: skippedAFK ? 'Previous track skipped (AFK)' : 'Queue is empty',
@@ -199,17 +227,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Обновляем статус трека на 'playing'
+    console.log(`💰 [QUEUE NEXT POST] Вызываю startPlayingTrack для queueId=${nextQueueItem.id}`);
     const started = await startPlayingTrack(nextQueueItem.id);
+    console.log(`💰 [QUEUE NEXT POST] startPlayingTrack результат: ${started}`);
 
     if (!started) {
+      console.error('💰 [QUEUE NEXT POST] Ошибка запуска трека');
       return NextResponse.json(
         { error: 'Failed to start track' },
         { status: 500 }
       );
     }
 
+    console.log(`💰 [QUEUE NEXT POST] Трек успешно запущен!`);
     return NextResponse.json(
-      { 
+      {
         success: true,
         queueItem: nextQueueItem,
         message: skippedAFK ? 'Previous track skipped (AFK), starting next' : 'Starting next track',
