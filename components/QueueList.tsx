@@ -45,253 +45,124 @@ interface QueueResponse {
 const getTrackTitle = (item: QueueItem) => item.tracks?.title ?? (item as any).title ?? 'Неизвестный трек';
 const getTrackArtist = (item: QueueItem) => item.tracks?.artist ?? (item as any).artist ?? 'Неизвестный исполнитель';
 
-// Debug logging helper
-const logRenderState = (isLoading: boolean, queue: QueueItem[]) => {
-  console.log('🎨 [RENDER] isLoading:', isLoading);
-  console.log('🎨 [RENDER] queue:', queue);
-  console.log('🎨 [RENDER] length:', queue?.length);
-};
-
 interface QueueListProps {
+  streamerId: string;
   className?: string;
   onRefetch?: () => void;
   refetchKey?: number;
 }
 
-export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
+export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
   console.log('🎵 QueueList component rendered');
   
-  const POLLING_INTERVAL = 15000; // 15 секунд
-  const MIN_UPDATE_INTERVAL = 3000; // анти-спам
-  
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  // Bug #1 fix: split isLoading into a ref for checking and state for UI
-  const isLoadingRef = useRef(false);
-  const [isLoadingUI, setIsLoadingUI] = useState<boolean>(true);
+  const [tracks, setTracks] = useState<QueueItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [total, setTotal] = useState<number>(0);
-  const [limit, setLimit] = useState<number>(20);
-  const [offset, setOffset] = useState<number>(0);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
   
-  const lastUpdateTimeRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isFetchingRef = useRef(false);
 
-  // Bug #2 fix: store loadQueue in a ref that updates every render
-  const loadQueueRef = useRef<Function>(() => {});
-
-  // State watcher to monitor changes
-  useEffect(() => {
-    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
-  }, [playingTrackId]);
-
-  // Debug useEffect for isLoading
-  useEffect(() => {
-    console.log('👀 [WATCH] isLoadingUI changed:', isLoadingUI);
-  }, [isLoadingUI]);
-
-
-  // State watcher to monitor changes
-  useEffect(() => {
-    console.log('👀 [STATE CHANGE] playingTrackId:', playingTrackId);
-  }, [playingTrackId]);
-
-  // Debug useEffect for isLoading
-  useEffect(() => {
-    console.log('👀 [WATCH] isLoadingUI changed:', isLoadingUI);
-  }, [isLoadingUI]);
-
-  // Cleanup: ensure isLoading is reset when component unmounts
-  useEffect(() => {
-    return () => {
-      console.log('🧹 [CLEANUP] reset isLoading');
-      setIsLoadingUI(false);
-    };
-  }, []);
-
-  const handlePlay = async (queueId: string) => {
-    setPlayingTrackId(queueId);
+  const fetchQueue = useCallback(async (showLoader = false) => {
+    if (isFetchingRef.current) {
+      console.log('⏭️ Skipping fetch - already in progress');
+      return;
+    }
 
     try {
+      isFetchingRef.current = true;
+      if (showLoader) setIsLoading(true);
+      setError('');
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
+      const response = await fetch(`/api/queue?streamerId=${streamerId}`, {
+        signal: abortControllerRef.current.signal,
+        cache: 'no-store',
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      console.log('📥 Fetched queue:', data);
+      setTracks(data.tracks || []);
+      
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log('⏹️ Fetch aborted');
+        return;
+      }
+      console.error('❌ Error fetching queue:', err);
+      setError('Ошибка загрузки очереди');
+    } finally {
+      isFetchingRef.current = false;
+      setIsLoading(false);
+    }
+  }, [streamerId]);
+
+  useEffect(() => {
+    console.log('🔄 Starting queue polling for streamer:', streamerId);
+    fetchQueue(true);
+    const interval = setInterval(() => fetchQueue(false), 15000);
+    return () => {
+      console.log('🛑 Stopping queue polling');
+      clearInterval(interval);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchQueue]);
+
+  const handlePlay = async (trackId: string) => {
+    if (playingTrackId) {
+      alert('Дождитесь завершения текущего трека');
+      return;
+    }
+
+    try {
+      setPlayingTrackId(trackId);
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queueId })
+        body: JSON.stringify({ streamerId, trackId }),
       });
 
-      if (response.status === 400) {
-        const errorData = await response.json();
+      const data = await response.json();
 
-        console.warn('⚠️ [API 400]:', errorData);
-        alert(errorData.error || 'Трек уже обработан');
-
-        // Bug #3 fix: reset anti-spam timer before forced reload after 400 error
-        lastUpdateTimeRef.current = 0;
-        // ❗ НЕ дергаем мгновенно (избегаем гонки)
-        setTimeout(() => {
-          console.log('🔄 [DELAYED SYNC]');
-          loadQueueRef.current();
-        }, 2000);
-
+      if (!response.ok) {
+        console.warn('⚠️ Play error:', data.error);
+        if (data.error?.includes('already played') || data.error?.includes('already playing')) {
+          alert('Трек уже обработан. Обновляем очередь...');
+          await fetchQueue(false);
+        } else {
+          alert(data.error || 'Ошибка воспроизведения');
+        }
         return;
       }
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      console.log('✅ Track started:', data);
+      setTracks(prevTracks =>
+        prevTracks.map(t =>
+          t.id === trackId ? { ...t, status: 'playing' as const } : t
+        )
+      );
+      setTimeout(() => fetchQueue(false), 2000);
 
-      // Bug #3 fix: reset anti-spam timer before forced reload after success
-      lastUpdateTimeRef.current = 0;
-      await loadQueueRef.current();
-
-    } catch (error) {
-      console.error('❌ [PLAY ERROR]:', error);
+    } catch (err) {
+      console.error('❌ Play error:', err);
+      alert('Ошибка сети');
     } finally {
       setPlayingTrackId(null);
     }
   };
 
-  // Fixed loadQueue function - no useCallback to avoid stale closure bug (#2)
-  const loadQueue = async (newOffset: number = offset, newLimit: number = limit) => {
-    // Anti-spam проверка
-    const now = Date.now();
-    if (now - lastUpdateTimeRef.current < MIN_UPDATE_INTERVAL) {
-      console.log('⏳ [LOAD] Слишком часто - пропускаю');
-      return;
-    }
-    
-    // Bug #1 fix: check isLoading using ref instead of stale closure
-    if (isLoadingRef.current) {
-      console.log('⛔ [LOAD] Уже загружается — пропуск');
-      return;
-    }
-
-    console.log('🚀 [LOAD] Начинаю загрузку...');
-    lastUpdateTimeRef.current = now;
-    // Bug #1 fix: set both ref and UI state
-    isLoadingRef.current = true;
-    setIsLoadingUI(true);
-
-    try {
-      console.log('📡 [API] Запрос к /api/queue...');
-      const response = await fetch(`/api/queue?status=pending&offset=${newOffset}&limit=${newLimit}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ [API] Данные получены:', data);
-
-      const tracks = Array.isArray(data.tracks) ? data.tracks : [];
-      console.log('📦 [DATA] Треков:', tracks.length);
-
-      setQueue(tracks);
-      setTotal(data.total || 0);
-      
-    } catch (error: any) {
-      console.error('❌ [LOAD ERROR]:', error);
-      setError(error.message);
-      
-    } finally {
-      // КРИТИЧНО: ВСЕГДА сбрасывай isLoading!
-      console.log('🔓 [LOAD] Сбрасываю isLoading');
-      // Bug #1 fix: reset both ref and UI state
-      isLoadingRef.current = false;
-      setIsLoadingUI(false);
-    }
-  };
-
-  // Update the ref with the latest loadQueue function - Bug #2 fix
-  useEffect(() => {
-    loadQueueRef.current = loadQueue;
-  }); // no deps = runs every render
-
-  // Single useEffect for polling with AbortController to prevent memory leaks - Bug #2 fix: use ref version
-  useEffect(() => {
-    console.log('🚀 [INIT] Первый запрос');
-
-    loadQueue();
-
-    const intervalId = setInterval(() => {
-      loadQueueRef.current();
-    }, POLLING_INTERVAL);
-
-    return () => {
-      clearInterval(intervalId);
-      console.log('🧹 [CLEANUP] polling остановлен');
-      if (abortController) {
-        abortController.abort();
-      }
-    };
-  }, []);
-
-  // Периодическая "жёсткая" синхронизация - Bug #2 fix: use ref version
-  useEffect(() => {
-    const syncInterval = setInterval(() => {
-      console.log('🔄 [SYNC] Принудительное обновление');
-      // Bug #3 fix: reset anti-spam timer before forced reload
-      lastUpdateTimeRef.current = 0;
-      loadQueueRef.current();
-    }, 30000);
-
-    return () => clearInterval(syncInterval);
-  }, []);
-
-  // Handle external refetch triggers
-  useEffect(() => {
-    // Bug #3 fix: reset anti-spam timer before forced reload from refetchKey
-    lastUpdateTimeRef.current = 0;
-    loadQueue(offset, limit);
-    if (onRefetch) {
-      onRefetch();
-    }
-  }, [refetchKey]); // Refetch when refetchKey changes
-
-  const refetch = async () => {
-    // Bug #3 fix: reset anti-spam timer before forced reload
-    lastUpdateTimeRef.current = 0;
-    await loadQueue(offset, limit);
-    if (onRefetch) {
-      onRefetch();
-    }
-  };
-
-  const handlePreviousPage = () => {
-    if (offset > 0) {
-      loadQueue(Math.max(0, offset - limit));
-    }
-  };
-
-  const handleNextPage = () => {
-    loadQueue(offset + limit);
-  };
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case 'youtube':
-        return '▶️';
-      case 'soundcloud':
-        return '🔊';
-      default:
-        return '▶️';
-    }
-  };
-
-  // Добавляем диагностику рендера перед return
-  console.log('🔍 [DEBUG RENDER] isLoadingUI:', isLoadingUI);
-  console.log('🔍 [DEBUG RENDER] queue:', queue);
-  console.log('🔍 [DEBUG RENDER] queue.length:', queue?.length);
-
-  // ИСПРАВЛЕННАЯ логика рендера: 
-  // Показываем "Загрузка очереди..." только если isLoading=true И очередь пуста
-  if (isLoadingUI && queue.length === 0) {
+  if (isLoading && tracks.length === 0) {
     return (
-      <div className={`card ${className}`}>
-        <h2 className="text-xl font-semibold mb-4 text-white">🎵 Очередь треков</h2>
-        <div className="flex items-center justify-center h-32">
-          <div className="text-slate-400">Загрузка очереди...</div>
-        </div>
+      <div className="text-center py-8">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        <p className="mt-2 text-gray-600">Загрузка очереди...</p>
       </div>
     );
   }
@@ -301,7 +172,7 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-white">🎵 Очередь треков</h2>
         <span className="px-3 py-1 bg-slate-700 rounded-full text-sm text-slate-300">
-          {queue.length} треков
+          {tracks.length} треков
         </span>
       </div>
 
@@ -311,16 +182,9 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
         </div>
       )}
 
-      {(queue && queue.length > 0) ? (
+      {(tracks && tracks.length > 0) ? (
         <div className="space-y-3">
-          {queue.map((item) => {
-            console.log('🎵 QueueList rendering track:', item);
-            console.log('🎨 [UI] Queue item:', {
-              id: item.id,           // UUID из queue
-              track_id: item.track_id,  // UUID из tracks
-              status: item.status,
-              tracks_data: item.tracks
-            });
+          {tracks.map((item) => {
             return (
             <div
               key={item.id}
@@ -418,29 +282,17 @@ export function QueueList({ className = '', onRefetch, refetchKey = 0 }: QueueLi
           <p className="text-sm mt-2">Сделайте донат, чтобы добавить трек</p>
         </div>
       )}
-
-      {/* Пагинация */}
-      {queue.length > 0 && (
-        <div className="flex items-center justify-center gap-4 mt-6">
-          <button
-            onClick={handlePreviousPage}
-            disabled={offset === 0}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-          >
-            ← Назад
-          </button>
-          <span className="text-slate-400 text-sm">
-            Страница {Math.floor(offset / limit) + 1}
-          </span>
-          <button
-            onClick={handleNextPage}
-            disabled={queue.length < limit}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-          >
-            Вперед →
-          </button>
-        </div>
-      )}
     </div>
   );
 }
+
+const getProviderIcon = (provider: string) => {
+  switch (provider) {
+    case 'youtube':
+      return '▶️';
+    case 'soundcloud':
+      return '🔊';
+    default:
+      return '▶️';
+  }
+};
