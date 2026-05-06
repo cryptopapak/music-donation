@@ -4,11 +4,20 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface QueueTrack {
   id: string;
-  track_name: string;
-  artist: string;
-  donor_name: string;
-  status: 'pending' | 'playing' | 'played';
+  status: 'pending' | 'playing' | 'played' | 'skipped';
   created_at: string;
+  tracks: {
+    id: string;
+    title: string;
+    artist: string;
+    url: string;
+    thumbnail_url: string;
+  };
+  donation: {
+    id: string;
+    donor_name: string;
+    amount: number;
+  };
 }
 
 interface QueueListProps {
@@ -76,7 +85,7 @@ export default function QueueList({ streamerId }: QueueListProps) {
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchQueue]);
+  }, [fetchQueue, streamerId]);
 
   const handlePlay = async (trackId: string) => {
     if (playingTrackId) {
@@ -96,11 +105,30 @@ export default function QueueList({ streamerId }: QueueListProps) {
 
       if (!response.ok) {
         console.warn('⚠️ Play error:', data.error);
-        if (data.error?.includes('already played') || data.error?.includes('already playing')) {
-          alert('Трек уже обработан. Обновляем очередь...');
+        // Улучшенная обработка ошибок
+        if (response.status === 400) {
+          if (data.currentStatus) {
+            let statusMessage = '';
+            if (data.currentStatus === 'playing') {
+              statusMessage = 'Трек уже воспроизводится';
+            } else if (data.currentStatus === 'played') {
+              statusMessage = 'Трек уже воспроизведен';
+            } else if (data.currentStatus === 'skipped') {
+              statusMessage = 'Трек был пропущен';
+            } else {
+              statusMessage = `Трек находится в статусе: ${data.currentStatus}`;
+            }
+            
+            alert(`${statusMessage}. Автоматическое обновление очереди...`);
+          } else {
+            alert(data.error || 'Трек уже обработан. Обновляем очередь...');
+          }
+          // Обновляем очередь для синхронизации состояния
           await fetchQueue(false);
+        } else if (response.status === 429) {
+          alert('Слишком много запросов. Пожалуйста, подождите немного.');
         } else {
-          alert(data.error || 'Ошибка воспроизведения');
+          alert(data.error || `Ошибка воспроизведения (${response.status})`);
         }
         return;
       }
@@ -108,7 +136,13 @@ export default function QueueList({ streamerId }: QueueListProps) {
       console.log('✅ Track started:', data);
       setTracks(prevTracks =>
         prevTracks.map(t =>
-          t.id === trackId ? { ...t, status: 'playing' as const } : t
+          t.id === trackId
+            ? {
+                ...t,
+                status: 'playing' as const,
+                // Обновляем также вложенные объекты если нужно
+              }
+            : t
         )
       );
       setTimeout(() => fetchQueue(false), 2000);
@@ -117,7 +151,8 @@ export default function QueueList({ streamerId }: QueueListProps) {
       console.error('❌ Play error:', err);
       alert('Ошибка сети');
     } finally {
-      setPlayingTrackId(null);
+      // Используем функциональное обновление, чтобы гарантировать сброс
+      setPlayingTrackId(prev => prev === trackId ? null : prev);
     }
   };
 
@@ -147,15 +182,25 @@ export default function QueueList({ streamerId }: QueueListProps) {
   const pendingTracks = tracks.filter(t => t.status === 'pending');
   const playingTrack = tracks.find(t => t.status === 'playing');
 
+  // Дебаг информации перед рендером
+  console.log('🔍 [DEBUG JSX] tracks.length:', tracks.length);
+  if (tracks.length > 0) {
+    console.log('🔍 [DEBUG JSX] track[0]:', tracks[0]);
+    console.log('🔍 [DEBUG JSX] track[0]?.tracks?.title:', tracks[0]?.tracks?.title);
+    console.log('🔍 [DEBUG JSX] track[0]?.donation?.donor_name:', tracks[0]?.donation?.donor_name);
+    console.log('🔍 [DEBUG JSX] pendingTracks.length:', pendingTracks.length);
+    console.log('🔍 [DEBUG JSX] playingTrack:', playingTrack);
+  }
+
   return (
     <div className="space-y-6">
       {playingTrack && (
         <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4">
           <h3 className="font-bold text-green-800 mb-2">▶️ Сейчас играет</h3>
           <div>
-            <p className="font-semibold">{playingTrack.track_name}</p>
-            <p className="text-sm text-gray-600">{playingTrack.artist}</p>
-            <p className="text-xs text-gray-500">От: {playingTrack.donor_name}</p>
+            <p className="font-semibold">{playingTrack.tracks?.title || 'Неизвестный трек'}</p>
+            <p className="text-sm text-gray-600">{playingTrack.tracks?.artist || 'Неизвестный исполнитель'}</p>
+            <p className="text-xs text-gray-500">От: {playingTrack.donation?.donor_name || 'Аноним'}</p>
           </div>
         </div>
       )}
@@ -176,9 +221,9 @@ export default function QueueList({ streamerId }: QueueListProps) {
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 font-mono text-sm">#{index + 1}</span>
                     <div>
-                      <p className="font-medium">{track.track_name}</p>
-                      <p className="text-sm text-gray-600">{track.artist}</p>
-                      <p className="text-xs text-gray-500">От: {track.donor_name}</p>
+                      <p className="font-medium">{track.tracks?.title || 'Неизвестный трек'}</p>
+                      <p className="text-sm text-gray-600">{track.tracks?.artist || 'Неизвестный исполнитель'}</p>
+                      <p className="text-xs text-gray-500">От: {track.donation?.donor_name || 'Аноним'}</p>
                     </div>
                   </div>
                 </div>

@@ -254,7 +254,8 @@ export async function POST(request: NextRequest) {
           error: queueItem.status === 'playing'
             ? 'Трек уже воспроизводится'
             : 'Трек уже воспроизведен',
-          currentStatus: queueItem.status
+          currentStatus: queueItem.status,
+          action: 'refresh_queue' // Флаг для фронтенда
         }, { status: 400 });
       }
 

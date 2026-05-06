@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
     const { data: queueItems, error } = await supabaseAdmin
       .from('queue')
       .select(`
-        *,
+        id,
+        status,
+        created_at,
         tracks:track_id (id, url, title, artist, thumbnail_url),
         donation:donation_id (id, donor_name, amount)
       `)
@@ -53,7 +55,8 @@ export async function GET(request: NextRequest) {
       console.log('📦 [QUEUE API] Первая запись:', JSON.stringify(queueItems[0], null, 2));
       
       // Добавляем отладочную информацию
-      console.log('🔍 [DEBUG] track_id из queue:', queueItems[0].track_id);
+      // Remove debug log since track_id is not directly accessible after join
+      // console.log('🔍 [DEBUG] track_id из queue:', queueItems[0].track_id);
       console.log('🔍 [DEBUG] tracks данные:', queueItems[0].tracks);
     }
 

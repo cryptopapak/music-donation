@@ -1,42 +1,42 @@
 'use client';
 
-import { Component, ErrorInfo, ReactNode } from 'react';
+import React from 'react';
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
-  fallback?: ReactNode;
+interface Props {
+  children: React.ReactNode;
 }
 
-interface ErrorBoundaryState {
+interface State {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return {
-      hasError: true,
-      error
-    };
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
-          Произошла ошибка. Пожалуйста, перезагрузите страницу.
+      return (
+        <div className="text-center py-8">
+          <p className="text-red-600 font-bold mb-2">Ошибка при загрузке очереди</p>
+          <p className="text-gray-600 text-sm mb-4">{this.state.error?.message}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Перезагрузить
+          </button>
         </div>
       );
     }
@@ -44,3 +44,5 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return this.props.children;
   }
 }
+
+export default ErrorBoundary;
