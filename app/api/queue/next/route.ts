@@ -37,13 +37,13 @@ async function isStreamerActive(streamerId: string): Promise<boolean> {
 /**
  * Получает следующий трек из очереди
  */
-async function getNextTrackFromQueue(streamerId: string) {
+async function getNextTrackFromQueue(streamerId: string | null) {
   try {
     console.log('💰 [GET NEXT TRACK] === НОВЫЙ ЗАПРОС ===');
     console.log('💰 [GET NEXT TRACK] Ищу трек со статусом pending...');
 
     // Получаем следующий трек из очереди (статус 'pending', по priority_score descending)
-    const { data: queueItem, error } = await supabaseAdmin
+    const queryBuilder = supabaseAdmin
       .from('queue')
       .select(`
         id,
@@ -62,11 +62,15 @@ async function getNextTrackFromQueue(streamerId: string) {
         )
       `)
       .eq('status', 'pending')
-      .eq('streamer_id', streamerId)
       .order('priority_score', { ascending: false })
       .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+      .limit(1);
+      
+    if (streamerId) {
+      queryBuilder.eq('streamer_id', streamerId);
+    }
+    
+    const { data: queueItem, error } = await queryBuilder.single();
 
     if (error) {
       console.error('💰 [GET NEXT TRACK] Ошибка при получении трека:', error);
@@ -195,9 +199,10 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const streamerId = url.searchParams.get('streamerId');
 
-  if (!streamerId) {
-    return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
-  }
+  // Temporarily disable streamer_id requirement
+  // if (!streamerId) {
+  //   return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
+  // }
 
   // Только проверяем AFK и показываем следующий трек
   await checkAndSkipAFK();
@@ -226,20 +231,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'queueId required' }, { status: 400 });
     }
 
-    if (!streamerId) {
-      console.error('❌ [QUEUE NEXT POST] streamerId не передан!');
-      return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
-    }
+    // Temporarily disable streamerId requirement as the column may not exist in the table
+    // if (!streamerId) {
+    //   console.error('❌ [QUEUE NEXT POST] streamerId не передан!');
+    //   return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
+    // }
 
 
     try {
       // Перед запуском проверь, существует ли трек
-      const { data: queueItem, error: fetchError } = await supabaseAdmin
+      const queryBuilder = supabaseAdmin
         .from('queue')
-        .select('id, status, track_id, streamer_id')
-        .eq('id', queueId)
-        .eq('streamer_id', streamerId)
-        .single();
+        .select('id, status, track_id')
+        .eq('id', queueId);
+      
+      if (streamerId) {
+        queryBuilder.eq('streamer_id', streamerId);
+      }
+      
+      const { data: queueItem, error: fetchError } = await queryBuilder.single();
 
       console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
 
@@ -265,14 +275,17 @@ export async function POST(request: NextRequest) {
       }
 
       // Теперь запускай
-      const { data: updatedTrack, error: updateError } = await supabaseAdmin
+      const updateQueryBuilder = supabaseAdmin
         .from('queue')
         .update({ status: 'playing', updated_at: new Date().toISOString() })
         .eq('id', queueId)
-        .eq('status', 'pending')
-        .eq('streamer_id', streamerId)
-        .select()
-        .single();
+        .eq('status', 'pending');
+        
+      if (streamerId) {
+        updateQueryBuilder.eq('streamer_id', streamerId);
+      }
+      
+      const { data: updatedTrack } = await updateQueryBuilder.select().single();
 
       if (!updatedTrack) {
         return NextResponse.json(

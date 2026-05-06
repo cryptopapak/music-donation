@@ -33,6 +33,8 @@ export default function QueueList({ streamerId }: QueueListProps) {
   const isFetchingRef = useRef(false);
   const playingRef = useRef<string | null>(null); // Changed from useState to useRef
   const isMounted = useRef(true); // Added mountedRef for memory leak prevention
+  // Processing queue ID to prevent concurrent requests on same track
+  const processingRef = useRef<string | null>(null);
 
   console.log('🎵 QueueList component rendered');
 
@@ -115,11 +117,16 @@ export default function QueueList({ streamerId }: QueueListProps) {
   }, [fetchQueue, streamerId]);
 
   const handlePlay = async (trackId: string) => {
-    // Use the ref value for the check instead of state
-    if (playingRef.current) {
-      alert('Дождитесь завершения текущего трека');
+    // Prevent double clicks and concurrent requests for same track
+    if (playingRef.current || processingRef.current === trackId) {
+      if (processingRef.current !== trackId) {
+        alert('Дождитесь завершения текущего трека');
+      }
       return;
     }
+
+    // Mark this track as being processed
+    processingRef.current = trackId;
 
     try {
       // Update ref immediately for sync access
@@ -134,7 +141,7 @@ export default function QueueList({ streamerId }: QueueListProps) {
 
       if (!response.ok) {
         console.warn('⚠️ Play error:', data.error);
-        // Улучшенная обработка ошибок
+        // Improved error handling
         if (response.status === 400) {
           if (data.currentStatus) {
             let statusMessage = '';
@@ -152,7 +159,7 @@ export default function QueueList({ streamerId }: QueueListProps) {
           } else {
             alert(data.error || 'Трек уже обработан. Обновляем очередь...');
           }
-          // Обновляем очередь для синхронизации состояния
+          // Refresh queue to sync state with DB
           await fetchQueue(false);
         } else if (response.status === 429) {
           alert('Слишком много запросов. Пожалуйста, подождите немного.');
@@ -181,13 +188,18 @@ export default function QueueList({ streamerId }: QueueListProps) {
       // Use immediate fetch instead of timeout
       await fetchQueue(false);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('❌ Play error:', err);
-      alert('Ошибка сети');
+      if (err.name !== 'AbortError') {
+        alert('Ошибка сети');
+      }
     } finally {
-      // Reset the ref immediately
+      // Reset the refs immediately
       if (playingRef.current === trackId) {
         playingRef.current = null;
+      }
+      if (processingRef.current === trackId) {
+        processingRef.current = null;
       }
     }
   };

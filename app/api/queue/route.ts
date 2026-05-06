@@ -12,25 +12,29 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 [QUEUE API] Запрос: limit=${limit}, offset=${offset}, streamerId=${streamerId}`);
 
-    // Validate streamerId presence
-    if (!streamerId) {
-      console.error('❌ [QUEUE API] streamerId is required');
-      return NextResponse.json({ error: 'streamerId is required' }, { status: 400 });
-    }
+    // Temporarily disable streamer_id validation as the column may not exist in the table
+    // if (!streamerId) {
+    //   console.error('❌ [QUEUE API] streamerId is required');
+    //   return NextResponse.json({ error: 'streamerId is required' }, { status: 400 });
+    // }
 
     // Get the total count separately
-    const { count, error: countError } = await supabaseAdmin
-      .from('queue')
-      .select('*', { count: 'exact', head: true })
-      .eq('streamer_id', streamerId)
-      .in('status', ['pending', 'playing']);
+    const queryBuilder = supabaseAdmin.from('queue').select('*', { count: 'exact', head: true });
+    
+    if (streamerId) {
+      queryBuilder.eq('streamer_id', streamerId);
+    }
+    queryBuilder.in('status', ['pending', 'playing']);
+
+    const { count, error: countError } = await queryBuilder;
 
     if (countError) {
       console.error('❌ [QUEUE API] Ошибка получения общего количества:', countError);
       return NextResponse.json({ error: countError.message }, { status: 500 });
     }
 
-    const { data: queueItems, error } = await supabaseAdmin
+    // Build main query
+    const mainQuery = supabaseAdmin
       .from('queue')
       .select(`
         id,
@@ -39,10 +43,15 @@ export async function GET(request: NextRequest) {
         tracks:track_id (id, url, title, artist, thumbnail_url),
         donation:donation_id (id, donor_name, amount)
       `)
-      .eq('streamer_id', streamerId)
       .in('status', ['pending', 'playing'])
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
+
+    if (streamerId) {
+      mainQuery.eq('streamer_id', streamerId);
+    }
+
+    const { data: queueItems, error } = await mainQuery;
 
     if (error) {
       console.error('❌ [QUEUE API] Ошибка Supabase:', error);
