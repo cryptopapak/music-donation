@@ -4,6 +4,7 @@ import React from 'react';
 
 interface Props {
   children: React.ReactNode;
+  fallback?: React.ReactNode;
 }
 
 interface State {
@@ -27,6 +28,9 @@ class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
       return (
         <div className="text-center py-8">
           <p className="text-red-600 font-bold mb-2">Ошибка при загрузке очереди</p>
