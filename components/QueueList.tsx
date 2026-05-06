@@ -27,15 +27,18 @@ interface QueueListProps {
 export default function QueueList({ streamerId }: QueueListProps) {
   const [tracks, setTracks] = useState<QueueTrack[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef(false);
+  const playingRef = useRef<string | null>(null); // Changed from useState to useRef
+  const isMounted = useRef(true); // Added mountedRef for memory leak prevention
 
   console.log('🎵 QueueList component rendered');
 
   const fetchQueue = useCallback(async (showLoader = false) => {
+    if (!isMounted.current) return; // Check if component is still mounted
+    
     if (isFetchingRef.current) {
       console.log('⏭️ Skipping fetch - already in progress');
       return;
@@ -46,55 +49,81 @@ export default function QueueList({ streamerId }: QueueListProps) {
       if (showLoader) setIsLoading(true);
       setError(null);
 
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      // First create the new controller and store it in the ref
+      const newAbortController = new AbortController();
+      const oldAbortController = abortControllerRef.current;
+      abortControllerRef.current = newAbortController;
+
+      // Then abort the old controller if it exists
+      if (oldAbortController) {
+        oldAbortController.abort();
       }
-      abortControllerRef.current = new AbortController();
 
       const response = await fetch(`/api/queue?streamerId=${streamerId}`, {
-        signal: abortControllerRef.current.signal,
+        signal: newAbortController.signal,
         cache: 'no-store',
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       console.log('📥 Fetched queue:', data);
-      setTracks(data.tracks || []);
+      
+      // Only update state if component is still mounted
+      if (isMounted.current) {
+        setTracks(data.tracks || []);
+      }
       
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.log('⏹️ Fetch aborted');
+        // Reset the fetching flag immediately to allow new requests
+        isFetchingRef.current = false;
+        setIsLoading(false);
         return;
       }
       console.error('❌ Error fetching queue:', err);
-      setError('Ошибка загрузки очереди');
+      // Only update error state if component is still mounted
+      if (isMounted.current) {
+        setError('Ошибка загрузки очереди');
+      }
     } finally {
-      isFetchingRef.current = false;
-      setIsLoading(false);
+      // Only update loading states if component is still mounted
+      if (isMounted.current) {
+        isFetchingRef.current = false;
+        setIsLoading(false);
+      }
     }
   }, [streamerId]);
 
   useEffect(() => {
+    // Initialize mounted ref
+    isMounted.current = true;
+    
     console.log('🔄 Starting queue polling for streamer:', streamerId);
     fetchQueue(true);
     const interval = setInterval(() => fetchQueue(false), 15000);
+    
     return () => {
       console.log('🛑 Stopping queue polling');
       clearInterval(interval);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      // Mark component as unmounted
+      isMounted.current = false;
     };
   }, [fetchQueue, streamerId]);
 
   const handlePlay = async (trackId: string) => {
-    if (playingTrackId) {
+    // Use the ref value for the check instead of state
+    if (playingRef.current) {
       alert('Дождитесь завершения текущего трека');
       return;
     }
 
     try {
-      setPlayingTrackId(trackId);
+      // Update ref immediately for sync access
+      playingRef.current = trackId;
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,25 +163,32 @@ export default function QueueList({ streamerId }: QueueListProps) {
       }
 
       console.log('✅ Track started:', data);
-      setTracks(prevTracks =>
-        prevTracks.map(t =>
-          t.id === trackId
-            ? {
-                ...t,
-                status: 'playing' as const,
-                // Обновляем также вложенные объекты если нужно
-              }
-            : t
-        )
-      );
-      setTimeout(() => fetchQueue(false), 2000);
+      // Only update state if component is mounted
+      if (isMounted.current) {
+        setTracks(prevTracks =>
+          prevTracks.map(t =>
+            t.id === trackId
+              ? {
+                  ...t,
+                  status: 'playing' as const,
+                  // Обновляем также вложенные объекты если нужно
+                }
+              : t
+          )
+        );
+      }
+      
+      // Use immediate fetch instead of timeout
+      await fetchQueue(false);
 
     } catch (err) {
       console.error('❌ Play error:', err);
       alert('Ошибка сети');
     } finally {
-      // Используем функциональное обновление, чтобы гарантировать сброс
-      setPlayingTrackId(prev => prev === trackId ? null : prev);
+      // Reset the ref immediately
+      if (playingRef.current === trackId) {
+        playingRef.current = null;
+      }
     }
   };
 
@@ -230,16 +266,16 @@ export default function QueueList({ streamerId }: QueueListProps) {
 
                 <button
                   onClick={() => handlePlay(track.id)}
-                  disabled={!!playingTrackId}
+                  disabled={!!playingRef.current}
                   className={`px-4 py-2 rounded font-medium transition-colors ${
-                    playingTrackId === track.id
+                    playingRef.current === track.id
                       ? 'bg-gray-300 text-gray-600 cursor-wait'
-                      : playingTrackId
+                      : playingRef.current
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                       : 'bg-blue-500 text-white hover:bg-blue-600'
                   }`}
                 >
-                  {playingTrackId === track.id ? 'Загрузка...' : 'Играть'}
+                  {playingRef.current === track.id ? 'Загрузка...' : 'Играть'}
                 </button>
               </div>
             ))}

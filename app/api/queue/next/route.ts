@@ -6,8 +6,6 @@ import { startPlayingTrack as dbStartPlayingTrack, getCurrentPlayingTrack } from
 const AFK_TIMEOUT_SECONDS = 300; // 5 минут без heartbeat
 const HEARTBEAT_INTERVAL_SECONDS = 30; // Heartbeat каждые 30 секунд
 
-// Variable to track currently processing queueId to prevent duplicate requests
-let processingQueueId: string | null = null;
 
 /**
  * Проверяет, активен ли стример (не AFK)
@@ -39,7 +37,7 @@ async function isStreamerActive(streamerId: string): Promise<boolean> {
 /**
  * Получает следующий трек из очереди
  */
-async function getNextTrackFromQueue() {
+async function getNextTrackFromQueue(streamerId: string) {
   try {
     console.log('💰 [GET NEXT TRACK] === НОВЫЙ ЗАПРОС ===');
     console.log('💰 [GET NEXT TRACK] Ищу трек со статусом pending...');
@@ -64,6 +62,7 @@ async function getNextTrackFromQueue() {
         )
       `)
       .eq('status', 'pending')
+      .eq('streamer_id', streamerId)
       .order('priority_score', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(1)
@@ -192,10 +191,19 @@ async function checkAndSkipAFK() {
 }
 
 export async function GET(request: NextRequest) {
+  // Extract streamerId from query parameters
+  const url = new URL(request.url);
+  const streamerId = url.searchParams.get('streamerId');
+
+  if (!streamerId) {
+    return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
+  }
+
   // Только проверяем AFK и показываем следующий трек
   await checkAndSkipAFK();
 
-  const nextQueueItem = await getNextTrackFromQueue();
+  // Pass streamerId to the function
+  const nextQueueItem = await getNextTrackFromQueue(streamerId);
 
   return NextResponse.json({
     success: true,
@@ -209,31 +217,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('💰 [QUEUE NEXT POST] Тело запроса:', JSON.stringify(body));
 
-    const { queueId } = body;
+    const { queueId, streamerId } = body;
     console.log('💰 [QUEUE NEXT POST] queueId из тела:', queueId);
+    console.log('💰 [QUEUE NEXT POST] streamerId из тела:', streamerId);
 
     if (!queueId) {
       console.error('❌ [QUEUE NEXT POST] queueId не передан!');
       return NextResponse.json({ error: 'queueId required' }, { status: 400 });
     }
 
-    // Check if the same request is already being processed
-    if (processingQueueId === queueId) {
-      console.log(`🎵 [QUEUE NEXT POST] Request for queueId ${queueId} is already processing`);
-      return NextResponse.json({ 
-        error: 'Request is already in progress' 
-      }, { status: 429 }); // Too Many Requests
+    if (!streamerId) {
+      console.error('❌ [QUEUE NEXT POST] streamerId не передан!');
+      return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
     }
 
-    // Mark the request as being processed
-    processingQueueId = queueId;
 
     try {
       // Перед запуском проверь, существует ли трек
       const { data: queueItem, error: fetchError } = await supabaseAdmin
         .from('queue')
-        .select('id, status, track_id')
+        .select('id, status, track_id, streamer_id')
         .eq('id', queueId)
+        .eq('streamer_id', streamerId)
         .single();
 
       console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
@@ -265,6 +270,7 @@ export async function POST(request: NextRequest) {
         .update({ status: 'playing', updated_at: new Date().toISOString() })
         .eq('id', queueId)
         .eq('status', 'pending')
+        .eq('streamer_id', streamerId)
         .select()
         .single();
 
@@ -282,14 +288,9 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ success: true, queueItem: updatedTrack });
     } finally {
-      // Clear the processing flag after request completes (success or error)
-      if (processingQueueId === queueId) {
-        processingQueueId = null;
-      }
+      // No processing flag to clear anymore
     }
   } catch (error: any) {
-    // Clear the processing flag if there's an exception
-    processingQueueId = null;
     console.error('❌ [QUEUE NEXT POST] Ошибка:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
