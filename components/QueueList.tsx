@@ -55,6 +55,9 @@ interface QueueListProps {
 export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
   console.log('🎵 QueueList component rendered');
   
+  // Add fallback for streamerId to prevent undefined
+  const actualStreamerId = streamerId || 'default-streamer-id';
+  
   const [tracks, setTracks] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -79,7 +82,7 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
       }
       abortControllerRef.current = new AbortController();
 
-      const apiUrl = streamerId ? `/api/queue?streamerId=${streamerId}` : '/api/queue';
+      const apiUrl = actualStreamerId ? `/api/queue?streamerId=${actualStreamerId}` : '/api/queue';
       const response = await fetch(apiUrl, {
         signal: abortControllerRef.current.signal,
         cache: 'no-store',
@@ -101,10 +104,10 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
       isFetchingRef.current = false;
       setIsLoading(false);
     }
-  }, [streamerId]);
+  }, [actualStreamerId]);
 
   useEffect(() => {
-    console.log('🔄 Starting queue polling for streamer:', streamerId);
+    console.log('🔄 Starting queue polling for streamer:', actualStreamerId);
     fetchQueue(true);
     const interval = setInterval(() => fetchQueue(false), 15000);
     return () => {
@@ -114,7 +117,7 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchQueue, streamerId]);
+  }, [fetchQueue, actualStreamerId]);
 
   const handlePlay = async (trackId: string) => {
     if (playingTrackId) {
@@ -124,9 +127,9 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
 
     try {
       setPlayingTrackId(trackId);
-      // Проверяем наличие streamerId перед вызовом API
-      if (!streamerId) {
-        console.error('❌ Не указан streamerId для воспроизведения трека');
+      // Проверяем наличие actualStreamerId перед вызовом API
+      if (!actualStreamerId) {
+        console.error('❌ Не указан actualStreamerId для воспроизведения трека');
         alert('Не удается воспроизвести трек: отсутствует идентификатор стримера');
         return;
       }
@@ -134,7 +137,7 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamerId, trackId }),
+        body: JSON.stringify({ streamerId: actualStreamerId, trackId }),
       });
 
       const data = await response.json();

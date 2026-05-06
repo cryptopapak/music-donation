@@ -38,7 +38,7 @@ export default function Home() {
           <div className="lg:col-span-2 space-y-6">
             <Player />
             <ErrorBoundary fallback={<div className="card p-4 text-red-400">Ошибка загрузки очереди</div>}>
-              <QueueList key={queueRefetchKey} />
+              <QueueList key={queueRefetchKey} streamerId="main-streamer" />
             </ErrorBoundary>
           </div>
         </div>

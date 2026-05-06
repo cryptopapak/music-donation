@@ -12,6 +12,12 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 [QUEUE API] Запрос: limit=${limit}, offset=${offset}, streamerId=${streamerId}`);
 
+    // Validate streamerId presence
+    if (!streamerId) {
+      console.error('❌ [QUEUE API] streamerId is required');
+      return NextResponse.json({ error: 'streamerId is required' }, { status: 400 });
+    }
+
     // Get the total count separately
     const { count, error: countError } = await supabaseAdmin
       .from('queue')
