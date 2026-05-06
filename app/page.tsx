@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { DonationForm } from '@/components/DonationForm';
 import QueueList from '@/components/QueueList';
 import { Player } from '@/components/Player';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 // Временный streamerId для MVP (позже заменить на auth)
 const DEFAULT_STREAMER_ID = 'default-streamer';
