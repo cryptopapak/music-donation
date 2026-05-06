@@ -58,12 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      {
-        success: true,
-        tracks: queueItems || [],
-        total: count || 0,
-        hasMore: (count || 0) > (offset + (queueItems?.length || 0)),
-      },
+      { tracks: queueItems || [] },
       {
         headers: {
           'Cache-Control': 'no-store, max-age=0',

@@ -1,70 +1,30 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
-interface Track {
+interface QueueTrack {
   id: string;
-  url: string;
-  provider: string;
-  title?: string | null;
-  artist?: string | null;
-  thumbnail_url?: string | null;
-  duration?: number | null;
-}
-
-interface Donation {
-  id: string;
-  amount: number;
-  donor_name?: string | null;
+  track_name: string;
+  artist: string;
+  donor_name: string;
+  status: 'pending' | 'playing' | 'played';
   created_at: string;
 }
-
-interface QueueItem {
-  id: string;
-  track_id: string;
-  url: string;
-  provider: string;
-  status: string;
-  position: number;
-  priority_score: number;
-  votes_count: number;
-  created_at: string;
-  tracks?: Track | null;
-  donation: Donation | null;
-}
-
-interface QueueResponse {
-  success: boolean;
-  tracks: QueueItem[];
-  total: number;
-  hasMore: boolean;
-  error?: string;
-}
-
-// Helper functions for fallback when API JOIN fails
-const getTrackTitle = (item: QueueItem) => item.tracks?.title ?? (item as any).title ?? 'Неизвестный трек';
-const getTrackArtist = (item: QueueItem) => item.tracks?.artist ?? (item as any).artist ?? 'Неизвестный исполнитель';
 
 interface QueueListProps {
-  streamerId?: string;
-  className?: string;
-  onRefetch?: () => void;
-  refetchKey?: number;
+  streamerId: string;
 }
 
-export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 0 }: QueueListProps) {
-  console.log('🎵 QueueList component rendered');
-  
-  // Add fallback for streamerId to prevent undefined
-  const actualStreamerId = streamerId || 'default-streamer-id';
-  
-  const [tracks, setTracks] = useState<QueueItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
+export default function QueueList({ streamerId }: QueueListProps) {
+  const [tracks, setTracks] = useState<QueueTrack[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
-  
+  const [error, setError] = useState<string | null>(null);
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef(false);
+
+  console.log('🎵 QueueList component rendered');
 
   const fetchQueue = useCallback(async (showLoader = false) => {
     if (isFetchingRef.current) {
@@ -75,15 +35,14 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
     try {
       isFetchingRef.current = true;
       if (showLoader) setIsLoading(true);
-      setError('');
+      setError(null);
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
       abortControllerRef.current = new AbortController();
 
-      const apiUrl = actualStreamerId ? `/api/queue?streamerId=${actualStreamerId}` : '/api/queue';
-      const response = await fetch(apiUrl, {
+      const response = await fetch(`/api/queue?streamerId=${streamerId}`, {
         signal: abortControllerRef.current.signal,
         cache: 'no-store',
       });
@@ -104,10 +63,10 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
       isFetchingRef.current = false;
       setIsLoading(false);
     }
-  }, [actualStreamerId]);
+  }, [streamerId]);
 
   useEffect(() => {
-    console.log('🔄 Starting queue polling for streamer:', actualStreamerId);
+    console.log('🔄 Starting queue polling for streamer:', streamerId);
     fetchQueue(true);
     const interval = setInterval(() => fetchQueue(false), 15000);
     return () => {
@@ -117,7 +76,7 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchQueue, actualStreamerId]);
+  }, [fetchQueue]);
 
   const handlePlay = async (trackId: string) => {
     if (playingTrackId) {
@@ -127,17 +86,10 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
 
     try {
       setPlayingTrackId(trackId);
-      // Проверяем наличие actualStreamerId перед вызовом API
-      if (!actualStreamerId) {
-        console.error('❌ Не указан actualStreamerId для воспроизведения трека');
-        alert('Не удается воспроизвести трек: отсутствует идентификатор стримера');
-        return;
-      }
-      
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamerId: actualStreamerId, trackId }),
+        body: JSON.stringify({ streamerId, trackId }),
       });
 
       const data = await response.json();
@@ -178,132 +130,85 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
     );
   }
 
-  return (
-    <div className={`card ${className}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold text-white">🎵 Очередь треков</h2>
-        <span className="px-3 py-1 bg-slate-700 rounded-full text-sm text-slate-300">
-          {tracks.length} треков
-        </span>
+  if (error && tracks.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-red-600">{error}</p>
+        <button
+          onClick={() => fetchQueue(true)}
+          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Повторить
+        </button>
       </div>
+    );
+  }
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
-          {error}
+  const pendingTracks = tracks.filter(t => t.status === 'pending');
+  const playingTrack = tracks.find(t => t.status === 'playing');
+
+  return (
+    <div className="space-y-6">
+      {playingTrack && (
+        <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4">
+          <h3 className="font-bold text-green-800 mb-2">▶️ Сейчас играет</h3>
+          <div>
+            <p className="font-semibold">{playingTrack.track_name}</p>
+            <p className="text-sm text-gray-600">{playingTrack.artist}</p>
+            <p className="text-xs text-gray-500">От: {playingTrack.donor_name}</p>
+          </div>
         </div>
       )}
 
-      {(tracks && tracks.length > 0) ? (
-        <div className="space-y-3">
-          {tracks.map((item) => {
-            return (
-            <div
-              key={item.id}
-              className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                item.status === 'playing'
-                  ? 'bg-indigo-500/20 border border-indigo-500/50'
-                  : item.status === 'played'
-                  ? 'bg-slate-800/50 opacity-70'
-                  : 'bg-slate-700/50 hover:bg-slate-700'
-              }`}
-            >
-              {/* Позиция в очереди */}
-              <div className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${
-                item.status === 'playing'
-                  ? 'bg-indigo-600 text-white'
-                  : item.status === 'played'
-                  ? 'bg-slate-600 text-slate-400'
-                  : 'bg-slate-600 text-slate-300'
-              }`}>
-                {item.status === 'played' ? '✅' : item.position}
-              </div>
-
-              {/* Информация о треке */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">{getProviderIcon(item.provider || '')}</span>
-                  <div>
-                    <p className="font-medium text-white truncate">
-                      {getTrackArtist(item)} {/* Bug #4 fix: use helper with fallback */}
-                    </p>
-                    <p className="text-sm text-slate-400 truncate">
-                      {getTrackTitle(item)} {/* Bug #4 fix: use helper with fallback */}
-                    </p>
+      <div>
+        <h3 className="font-bold mb-3">Очередь ({pendingTracks.length})</h3>
+        
+        {pendingTracks.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">Очередь пуста</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingTracks.map((track, index) => (
+              <div
+                key={track.id}
+                className="flex items-center justify-between bg-white border rounded-lg p-3 hover:shadow-md transition-shadow"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-400 font-mono text-sm">#{index + 1}</span>
+                    <div>
+                      <p className="font-medium">{track.track_name}</p>
+                      <p className="text-sm text-gray-600">{track.artist}</p>
+                      <p className="text-xs text-gray-500">От: {track.donor_name}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Информация о донате */}
-              <div className="flex flex-col items-end gap-1">
-                <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-sm font-medium">
-                  {item.donation?.amount || 0} ₽
-                </span>
-                <span className="text-xs text-slate-500">
-                  {item.donation?.created_at
-                    ? new Date(item.donation.created_at).toLocaleTimeString('ru-RU', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : ''}
-                </span>
-              </div>
-
-              {/* Кнопки управления */}
-              {item.status === 'pending' && (
                 <button
-                  onClick={() => handlePlay(item.id)}
-                  disabled={playingTrackId === item.id}
-                  className={`px-3 py-1 rounded text-sm ${
-                    playingTrackId === item.id
-                      ? 'bg-indigo-400 text-gray-300 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  onClick={() => handlePlay(track.id)}
+                  disabled={!!playingTrackId}
+                  className={`px-4 py-2 rounded font-medium transition-colors ${
+                    playingTrackId === track.id
+                      ? 'bg-gray-300 text-gray-600 cursor-wait'
+                      : playingTrackId
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
                   }`}
                 >
-                  {playingTrackId === item.id ? '▶️ Запуск...' : '▶️ Играть'}
+                  {playingTrackId === track.id ? 'Загрузка...' : 'Играть'}
                 </button>
-              )}
-              {item.status === 'playing' && (
-                <button
-                  onClick={() => console.log('Skip:', item.id)}
-                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm"
-                >
-                  ⏭️ Пропустить
-                </button>
-              )}
-            </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-          <svg
-            className="w-12 h-12 mb-2 opacity-50"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <p>Очередь пуста</p>
-          <p className="text-sm mt-2">Сделайте донат, чтобы добавить трек</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-2 bg-gray-100 rounded text-xs">
+          <p>StreamerID: {streamerId}</p>
+          <p>Total tracks: {tracks.length}</p>
+          <p>Last update: {new Date().toLocaleTimeString()}</p>
         </div>
       )}
     </div>
   );
 }
-
-const getProviderIcon = (provider: string) => {
-  switch (provider) {
-    case 'youtube':
-      return '▶️';
-    case 'soundcloud':
-      return '🔊';
-    default:
-      return '▶️';
-  }
-};
