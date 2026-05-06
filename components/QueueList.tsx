@@ -46,7 +46,7 @@ const getTrackTitle = (item: QueueItem) => item.tracks?.title ?? (item as any).t
 const getTrackArtist = (item: QueueItem) => item.tracks?.artist ?? (item as any).artist ?? 'Неизвестный исполнитель';
 
 interface QueueListProps {
-  streamerId: string;
+  streamerId?: string;
   className?: string;
   onRefetch?: () => void;
   refetchKey?: number;
@@ -79,7 +79,8 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
       }
       abortControllerRef.current = new AbortController();
 
-      const response = await fetch(`/api/queue?streamerId=${streamerId}`, {
+      const apiUrl = streamerId ? `/api/queue?streamerId=${streamerId}` : '/api/queue';
+      const response = await fetch(apiUrl, {
         signal: abortControllerRef.current.signal,
         cache: 'no-store',
       });
@@ -113,7 +114,7 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchQueue]);
+  }, [fetchQueue, streamerId]);
 
   const handlePlay = async (trackId: string) => {
     if (playingTrackId) {
@@ -123,6 +124,13 @@ export function QueueList({ streamerId, className = '', onRefetch, refetchKey = 
 
     try {
       setPlayingTrackId(trackId);
+      // Проверяем наличие streamerId перед вызовом API
+      if (!streamerId) {
+        console.error('❌ Не указан streamerId для воспроизведения трека');
+        alert('Не удается воспроизвести трек: отсутствует идентификатор стримера');
+        return;
+      }
+      
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

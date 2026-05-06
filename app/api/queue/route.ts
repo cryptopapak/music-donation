@@ -8,15 +8,16 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
-    const status = searchParams.get('status') || 'pending';
+    const streamerId = searchParams.get('streamerId');
 
-    console.log(`🔍 [QUEUE API] Запрос: limit=${limit}, offset=${offset}, status=${status}`);
+    console.log(`🔍 [QUEUE API] Запрос: limit=${limit}, offset=${offset}, streamerId=${streamerId}`);
 
     // Get the total count separately
     const { count, error: countError } = await supabaseAdmin
       .from('queue')
       .select('*', { count: 'exact', head: true })
-      .eq('status', status);
+      .eq('streamer_id', streamerId)
+      .in('status', ['pending', 'playing']);
 
     if (countError) {
       console.error('❌ [QUEUE API] Ошибка получения общего количества:', countError);
@@ -30,7 +31,8 @@ export async function GET(request: NextRequest) {
         tracks:track_id (id, url, title, artist, thumbnail_url),
         donation:donation_id (id, donor_name, amount)
       `)
-      .eq('status', status)
+      .eq('streamer_id', streamerId)
+      .in('status', ['pending', 'playing'])
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -49,12 +51,19 @@ export async function GET(request: NextRequest) {
       console.log('🔍 [DEBUG] tracks данные:', queueItems[0].tracks);
     }
 
-    return NextResponse.json({
-      success: true,
-      tracks: queueItems || [],
-      total: count || 0,
-      hasMore: (count || 0) > (offset + (queueItems?.length || 0)),
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        tracks: queueItems || [],
+        total: count || 0,
+        hasMore: (count || 0) > (offset + (queueItems?.length || 0)),
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        }
+      }
+    );
   } catch (error) {
     console.error('❌ [QUEUE API] Ошибка:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

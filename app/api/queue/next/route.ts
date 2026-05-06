@@ -259,10 +259,27 @@ export async function POST(request: NextRequest) {
       }
 
       // Теперь запускай
-      const result = await startPlayingTrack(queueId);
+      const { data: updatedTrack, error: updateError } = await supabaseAdmin
+        .from('queue')
+        .update({ status: 'playing', updated_at: new Date().toISOString() })
+        .eq('id', queueId)
+        .eq('status', 'pending')
+        .select()
+        .single();
+
+      if (!updatedTrack) {
+        return NextResponse.json(
+          {
+            error: 'Track status changed during update',
+            shouldRefresh: true
+          },
+          { status: 409 }
+        );
+      }
+
       console.log('✅ [QUEUE NEXT POST] Трек успешно запущен!');
 
-      return NextResponse.json({ success: true, queueItem });
+      return NextResponse.json({ success: true, queueItem: updatedTrack });
     } finally {
       // Clear the processing flag after request completes (success or error)
       if (processingQueueId === queueId) {
