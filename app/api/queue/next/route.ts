@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { startPlayingTrack as dbStartPlayingTrack, getCurrentPlayingTrack } from '@/lib/database';
 
-// Константы для AFK detection
-const AFK_TIMEOUT_SECONDS = 300; // 5 минут без heartbeat
-const HEARTBEAT_INTERVAL_SECONDS = 30; // Heartbeat каждые 30 секунд
+const AFK_TIMEOUT_SECONDS = 300;
 
-
-/**
- * Проверяет, активен ли стример (не AFK)
- */
 async function isStreamerActive(streamerId: string): Promise<boolean> {
   try {
     const { data: streamer, error } = await supabaseAdmin
@@ -18,32 +11,19 @@ async function isStreamerActive(streamerId: string): Promise<boolean> {
       .eq('id', streamerId)
       .single();
 
-    if (error || !streamer) {
-      // Если нет данных о стримере, считаем его активным
-      return true;
-    }
+    if (error || !streamer) return true;
 
-    const lastHeartbeat = new Date(streamer.last_heartbeat_at).getTime();
-    const now = Date.now();
-    const timeSinceHeartbeat = (now - lastHeartbeat) / 1000;
-
+    const timeSinceHeartbeat = (Date.now() - new Date(streamer.last_heartbeat_at).getTime()) / 1000;
     return timeSinceHeartbeat < AFK_TIMEOUT_SECONDS;
-  } catch (error) {
-    console.error('Error checking streamer activity:', error);
-    return true; // Если ошибка, считаем стримера активным
+  } catch {
+    return true;
   }
 }
 
-/**
- * Получает следующий трек из очереди
- */
 async function getNextTrackFromQueue(streamerId: string | null) {
   try {
-    console.log('💰 [GET NEXT TRACK] === НОВЫЙ ЗАПРОС ===');
-    console.log('💰 [GET NEXT TRACK] Ищу трек со статусом pending...');
-
-    // Получаем следующий трек из очереди (статус 'pending', по priority_score descending)
-    const queryBuilder = supabaseAdmin
+    // ✅ Переприсваиваем queryBuilder — иначе eq/order не применяются
+    let query = supabaseAdmin
       .from('queue')
       .select(`
         id,
@@ -65,50 +45,22 @@ async function getNextTrackFromQueue(streamerId: string | null) {
       .order('priority_score', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(1);
-      
+
     if (streamerId) {
-      queryBuilder.eq('streamer_id', streamerId);
-    }
-    
-    const { data: queueItem, error } = await queryBuilder.single();
-
-    if (error) {
-      console.error('💰 [GET NEXT TRACK] Ошибка при получении трека:', error);
+      query = query.eq('streamer_id', streamerId);
     }
 
-    console.log(`💰 [GET NEXT TRACK] Найден трек:`, queueItem ? `id=${queueItem.id}, status=${queueItem.status}` : 'null');
+    const { data: queueItem, error } = await query.single();
 
-    if (error || !queueItem) {
-      console.log('💰 [GET NEXT TRACK] Трек не найден');
-      return null;
-    }
-
+    if (error || !queueItem) return null;
     return queueItem;
-  } catch (error) {
-    console.error('💰 [GET NEXT TRACK] Error getting next track:', error);
+  } catch {
     return null;
   }
 }
 
-/**
- * Обновляет статус трека на 'playing' и сдвигает позиции
- * Использует функцию из lib/database.ts для централизованной логики
- */
-async function startPlayingTrack(queueId: string) {
-  try {
-    return await dbStartPlayingTrack(queueId);
-  } catch (error) {
-    console.error('Error starting track:', error);
-    return false;
-  }
-}
-
-/**
- * Пропускает текущий трек (авто-скип AFK или вручную)
- */
 async function skipCurrentTrack() {
   try {
-    // Получаем текущий играющий трек
     const { data: currentQueueItem, error } = await supabaseAdmin
       .from('queue')
       .select('id')
@@ -117,97 +69,56 @@ async function skipCurrentTrack() {
       .limit(1)
       .single();
 
-    if (error || !currentQueueItem) {
-      return false;
-    }
+    if (error || !currentQueueItem) return false;
 
-    // Обновляем статус на 'skipped'
     const { error: updateError } = await supabaseAdmin
       .from('queue')
-      .update({
-        status: 'skipped',
-        ended_at: new Date().toISOString(),
-      })
+      .update({ status: 'skipped', ended_at: new Date().toISOString() })
       .eq('id', currentQueueItem.id);
 
-    if (updateError) {
-      console.error('Error skipping track:', updateError);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error in skipCurrentTrack:', error);
+    return !updateError;
+  } catch {
     return false;
   }
 }
 
-/**
- * Проверяет AFK и пропускает текущий трек, если стример неактивен
- */
 async function checkAndSkipAFK() {
   try {
-    // Получаем текущий играющий трек
     const { data: currentQueueItem, error: fetchError } = await supabaseAdmin
       .from('queue')
-      .select(`
-        id,
-        donation_id
-      `)
+      .select('id, donation_id')
       .eq('status', 'playing')
       .order('started_at', { ascending: false })
       .limit(1)
       .single();
 
-    if (fetchError || !currentQueueItem) {
-      return false;
-    }
+    if (fetchError || !currentQueueItem) return false;
 
-    // Получаем donation
     const { data: donation, error: donationError } = await supabaseAdmin
       .from('donations')
       .select('user_id')
       .eq('id', currentQueueItem.donation_id)
       .single();
 
-    if (donationError || !donation) {
-      return false;
-    }
+    if (donationError || !donation?.user_id) return false;
 
-    const streamerId = donation.user_id;
-    if (!streamerId) {
-      return false;
-    }
-
-    // Проверяем, активен ли стример
-    const isActive = await isStreamerActive(streamerId);
+    const isActive = await isStreamerActive(donation.user_id);
     if (!isActive) {
-      console.log(`⚠️ Стример ${streamerId} AFK, пропускаем трек`);
+      console.log(`⚠️ Стример AFK, пропускаем трек`);
       await skipCurrentTrack();
       return true;
     }
 
     return false;
-  } catch (error) {
-    console.error('Error in checkAndSkipAFK:', error);
+  } catch {
     return false;
   }
 }
 
 export async function GET(request: NextRequest) {
-  // Extract streamerId from query parameters
-  const url = new URL(request.url);
-  const streamerId = url.searchParams.get('streamerId');
+  const streamerId = new URL(request.url).searchParams.get('streamerId');
 
-  // Temporarily disable streamer_id requirement
-  // if (!streamerId) {
-  //   return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
-  // }
-
-  // Только проверяем AFK и показываем следующий трек
   await checkAndSkipAFK();
-
-  // Pass streamerId to the function
   const nextQueueItem = await getNextTrackFromQueue(streamerId);
 
   return NextResponse.json({
@@ -220,89 +131,76 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    console.log('💰 [QUEUE NEXT POST] Тело запроса:', JSON.stringify(body));
-
+    // ✅ queueId — это ID записи в таблице queue, НЕ track.id
     const { queueId, streamerId } = body;
-    console.log('💰 [QUEUE NEXT POST] queueId из тела:', queueId);
-    console.log('💰 [QUEUE NEXT POST] streamerId из тела:', streamerId);
+
+    console.log('💰 [QUEUE NEXT POST] queueId:', queueId, 'streamerId:', streamerId);
 
     if (!queueId) {
-      console.error('❌ [QUEUE NEXT POST] queueId не передан!');
       return NextResponse.json({ error: 'queueId required' }, { status: 400 });
     }
 
-    // Temporarily disable streamerId requirement as the column may not exist in the table
-    // if (!streamerId) {
-    //   console.error('❌ [QUEUE NEXT POST] streamerId не передан!');
-    //   return NextResponse.json({ error: 'streamerId required' }, { status: 400 });
-    // }
+    // ✅ Переприсваиваем query при добавлении фильтров
+    let fetchQuery = supabaseAdmin
+      .from('queue')
+      .select('id, status, track_id')
+      .eq('id', queueId);
 
-
-    try {
-      // Перед запуском проверь, существует ли трек
-      const queryBuilder = supabaseAdmin
-        .from('queue')
-        .select('id, status, track_id')
-        .eq('id', queueId);
-      
-      if (streamerId) {
-        queryBuilder.eq('streamer_id', streamerId);
-      }
-      
-      const { data: queueItem, error: fetchError } = await queryBuilder.single();
-
-      console.log('🔍 [QUEUE NEXT POST] Найден трек:', JSON.stringify(queueItem));
-
-      if (fetchError || !queueItem) {
-        console.error('❌ [QUEUE NEXT POST] Трек не найден:', fetchError);
-        return NextResponse.json({ 
-          error: 'Track not found',
-          queueId,
-          fetchError 
-        }, { status: 404 });
-      }
-
-      if (queueItem.status !== 'pending') {
-        console.error(`❌ [QUEUE NEXT] invalid status: ${queueItem.status}`);
-
-        return NextResponse.json({
-          error: queueItem.status === 'playing'
-            ? 'Трек уже воспроизводится'
-            : 'Трек уже воспроизведен',
-          currentStatus: queueItem.status,
-          action: 'refresh_queue' // Флаг для фронтенда
-        }, { status: 400 });
-      }
-
-      // Теперь запускай
-      const updateQueryBuilder = supabaseAdmin
-        .from('queue')
-        .update({ status: 'playing', updated_at: new Date().toISOString() })
-        .eq('id', queueId)
-        .eq('status', 'pending');
-        
-      if (streamerId) {
-        updateQueryBuilder.eq('streamer_id', streamerId);
-      }
-      
-      const { data: updatedTrack } = await updateQueryBuilder.select().single();
-
-      if (!updatedTrack) {
-        return NextResponse.json(
-          {
-            error: 'Track status changed during update',
-            shouldRefresh: true
-          },
-          { status: 409 }
-        );
-      }
-
-      console.log('✅ [QUEUE NEXT POST] Трек успешно запущен!');
-
-      return NextResponse.json({ success: true, queueItem: updatedTrack });
-    } finally {
-      // No processing flag to clear anymore
+    if (streamerId) {
+      fetchQuery = fetchQuery.eq('streamer_id', streamerId);
     }
+
+    const { data: queueItem, error: fetchError } = await fetchQuery.single();
+
+    if (fetchError || !queueItem) {
+      console.error('❌ [QUEUE NEXT POST] Трек не найден:', fetchError);
+      return NextResponse.json({ error: 'Track not found', queueId }, { status: 404 });
+    }
+
+    if (queueItem.status !== 'pending') {
+      return NextResponse.json({
+        error: queueItem.status === 'playing'
+          ? 'Трек уже воспроизводится'
+          : 'Трек уже воспроизведён',
+        currentStatus: queueItem.status,
+        action: 'refresh_queue',
+      }, { status: 400 });
+    }
+
+    // ✅ Атомарный апдейт: .eq('status', 'pending') защищает от race condition
+    let updateQuery = supabaseAdmin
+      .from('queue')
+      .update({
+        status: 'playing',
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', queueId)
+      .eq('status', 'pending');
+
+    if (streamerId) {
+      updateQuery = updateQuery.eq('streamer_id', streamerId);
+    }
+
+    const { data: updatedTrack } = await updateQuery.select().single();
+
+    if (!updatedTrack) {
+      return NextResponse.json(
+        { error: 'Track status changed during update', shouldRefresh: true },
+        { status: 409 }
+      );
+    }
+
+    // Завершаем предыдущий playing трек (исключая только что запущенный)
+    await supabaseAdmin
+      .from('queue')
+      .update({ status: 'played', ended_at: new Date().toISOString() })
+      .eq('status', 'playing')
+      .neq('id', queueId);
+
+    console.log('✅ [QUEUE NEXT POST] Трек запущен:', queueId);
+    return NextResponse.json({ success: true, queueItem: updatedTrack });
+
   } catch (error: any) {
     console.error('❌ [QUEUE NEXT POST] Ошибка:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

@@ -139,23 +139,14 @@ export interface Database {
   };
 }
 
-// Константы для ограничений
 export const MAX_TRACK_DURATION = 600; // 10 минут в секундах
 
-/**
- * Определяет провайдера из URL трека
- */
 function getProviderFromUrl(url: string): 'youtube' | 'soundcloud' {
-  if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    return 'youtube';
-  }
-  if (url.includes('soundcloud.com')) {
-    return 'soundcloud';
-  }
-  return 'youtube'; // fallback по умолчанию
+  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+  if (url.includes('soundcloud.com')) return 'soundcloud';
+  return 'youtube';
 }
 
-// Получение blacklist из .env (разделенные запятыми)
 const ENV_BLACKLIST_ARTISTS = process.env.BLACKLIST_ARTISTS
   ? process.env.BLACKLIST_ARTISTS.split(',').map(s => s.trim())
   : [];
@@ -163,13 +154,9 @@ const ENV_BLACKLIST_KEYWORDS = process.env.BLACKLIST_KEYWORDS
   ? process.env.BLACKLIST_KEYWORDS.split(',').map(s => s.trim())
   : [];
 
-// Используем env переменные, если они заданы, иначе дефолтные значения
 export const DEFAULT_BLACKLIST_ARTISTS = ENV_BLACKLIST_ARTISTS.length > 0 ? ENV_BLACKLIST_ARTISTS : ['nsfw', 'explicit'];
 export const DEFAULT_BLACKLIST_KEYWORDS = ENV_BLACKLIST_KEYWORDS.length > 0 ? ENV_BLACKLIST_KEYWORDS : ['nsfw', 'explicit'];
 
-/**
- * Проверяет, есть ли трек в blacklist стримера
- */
 export function isTrackInBlacklist(
   title: string | null,
   artist: string | null,
@@ -180,46 +167,27 @@ export function isTrackInBlacklist(
   const artistLower = artist?.toLowerCase() || '';
   const combined = `${titleLower} ${artistLower}`;
 
-  // Проверка артистов в blacklist
   for (const blockedArtist of blacklistArtists) {
-    if (artistLower.includes(blockedArtist.toLowerCase())) {
-      return true;
-    }
+    if (artistLower.includes(blockedArtist.toLowerCase())) return true;
   }
-
-  // Проверка ключевых слов в blacklist
   for (const keyword of blacklistKeywords) {
-    if (combined.includes(keyword.toLowerCase())) {
-      return true;
-    }
+    if (combined.includes(keyword.toLowerCase())) return true;
   }
-
   return false;
 }
 
-/**
- * Проверяет, превышает ли трек максимальную длительность
- */
 export function isTrackTooLong(duration: number | null, maxDuration: number = MAX_TRACK_DURATION): boolean {
-  if (duration === null || duration === undefined) {
-    // Если длительность неизвестна, считаем, что не превышает (проверка при воспроизведении)
-    return false;
-  }
+  if (duration === null || duration === undefined) return false;
   return duration > maxDuration;
 }
 
-// Добавление трека в очередь (используется для webhook)
 export async function addTrackToQueue(donationId: string) {
-  console.log('💰 [ADD TO QUEUE] Начинаю добавление donationId:', donationId);
-  console.log('💰 [ADD TO QUEUE] === НОВЫЙ ЗАПРОС ===');
-  console.log('💰 [ADD TO QUEUE] donationId:', donationId);
-  console.log(`💰 [ADD TO QUEUE] Начало добавления трека в очередь для donation_id=${donationId}`);
-  
+  console.log(`💰 [ADD TO QUEUE] Начало для donation_id=${donationId}`);
+
   const { supabaseAdmin } = await import('@/lib/supabase');
   const { fetchMetadataFromUrl } = await import('@/lib/metadata-parser');
-  
+
   // Получение доната
-  console.log(`💰 [ADD TO QUEUE] Поиск доната с id=${donationId} и статусом=completed`);
   const { data: donation, error: donationError } = await supabaseAdmin
     .from('donations')
     .select('*')
@@ -227,105 +195,63 @@ export async function addTrackToQueue(donationId: string) {
     .eq('status', 'completed')
     .single();
 
-  if (donationError) {
-    console.error(`❌ [ADD TO QUEUE] Donation select error:`, donationError);
-    console.error(`❌ [ADD TO QUEUE] Донат с id=${donationId} не найден или статус не 'completed'`);
-    console.error(`❌ [ADD TO QUEUE] Supabase URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
-    console.error(`❌ [ADD TO QUEUE] SUPABASE_SERVICE_KEY:`, process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'MISSING');
+  if (donationError || !donation) {
+    console.error(`❌ [ADD TO QUEUE] Донат не найден или не completed:`, donationError);
     throw new Error('Failed to find donation');
   }
-  console.log(`✅ [ADD TO QUEUE] Донат найден: id=${donation.id}, amount=${donation.amount}, track=${donation.track_url}`);
+  console.log(`✅ [ADD TO QUEUE] Донат найден: amount=${donation.amount}, url=${donation.track_url}`);
 
-  // Определение провайдера из URL
-  console.log(`💰 [ADD TO QUEUE] Определение провайдера для URL: ${donation.track_url}`);
   const provider = getProviderFromUrl(donation.track_url);
-  console.log(`💰 [ADD TO QUEUE] Определен провайдер: ${provider}`);
 
   // Создание/получение трека
-  console.log(`💰 [ADD TO QUEUE] Создание/получение трека для URL: ${donation.track_url}`);
   const { data: track, error: trackError } = await supabaseAdmin
     .from('tracks')
-    .upsert(
-      {
-        url: donation.track_url,
-        provider: provider,
-      },
-      { onConflict: 'url' }
-    )
+    .upsert({ url: donation.track_url, provider }, { onConflict: 'url' })
     .select()
     .single();
 
-  if (trackError) {
+  if (trackError || !track) {
     console.error(`❌ [ADD TO QUEUE] Track upsert error:`, trackError);
-    console.error(`❌ [ADD TO QUEUE] Данные трека:`, { url: donation.track_url, provider });
     throw new Error('Failed to create track');
   }
   console.log(`✅ [ADD TO QUEUE] Трек создан/найден: id=${track.id}`);
 
-  // Попытка получить метаданные
+  // ✅ Получаем метаданные отдельно от blacklist-проверки
+  let metadata: { title: string | null; artist: string | null; thumbnail_url: string | null; duration: number | null } | null = null;
   try {
-    console.log(`💰 [ADD TO QUEUE] Получение метаданных для URL: ${donation.track_url}`);
-    const metadata = await fetchMetadataFromUrl(donation.track_url);
-    console.log(`💰 [ADD TO QUEUE] Метаданные получены:`, metadata);
-    
-    // Обновление трека метаданными
-    const { error: updateError } = await supabaseAdmin
+    metadata = await fetchMetadataFromUrl(donation.track_url);
+    console.log(`💰 [ADD TO QUEUE] Метаданные:`, metadata);
+
+    await supabaseAdmin
       .from('tracks')
       .update({
         title: metadata.title,
         artist: metadata.artist,
         thumbnail_url: metadata.thumbnail_url,
-        duration: metadata.duration
+        duration: metadata.duration,
       })
       .eq('id', track.id);
+  } catch (metadataError) {
+    // Метаданные не критичны — продолжаем без них
+    console.error('❌ [ADD TO QUEUE] Не удалось получить метаданные:', metadataError);
+  }
 
-    if (updateError) {
-      console.error('Track metadata update error:', updateError);
-    }
-
-    // Проверка blacklist
+  // ✅ Blacklist и длительность проверяем ПОСЛЕ try/catch — теперь реально блокирует
+  if (metadata) {
     if (isTrackInBlacklist(metadata.title, metadata.artist)) {
-      console.warn(`❌ Трек "${metadata.title}" от "${metadata.artist}" в blacklist`);
+      console.warn(`❌ [ADD TO QUEUE] Трек в blacklist: "${metadata.title}" - "${metadata.artist}"`);
       throw new Error('Трек находится в blacklist');
     }
-
-    // Проверка длительности
     if (isTrackTooLong(metadata.duration)) {
-      console.warn(`❌ Трек "${metadata.title}" слишком длинный: ${metadata.duration} сек`);
+      console.warn(`❌ [ADD TO QUEUE] Трек слишком длинный: ${metadata.duration}с`);
       throw new Error(`Максимальная длительность трека: ${MAX_TRACK_DURATION / 60} минут`);
     }
-  } catch (metadataError) {
-    console.error('Failed to fetch metadata for track:', metadataError);
-    // Не прерываем выполнение, если не удалось получить метаданные
   }
 
-  // Получаем сумму доната для расчета приоритета
-  console.log(`💰 [ADD TO QUEUE] Расчет приоритета для доната id=${donationId}`);
-  const { data: donationData, error: donationDataError } = await supabaseAdmin
-    .from('donations')
-    .select('amount')
-    .eq('id', donationId)
-    .single();
-
-  if (donationDataError) {
-    console.error(`❌ [ADD TO QUEUE] Donation amount error:`, donationDataError);
-  }
-  
-  const priorityScore = donationData ? Math.floor(donationData.amount / 100) : 0;
+  // ✅ Приоритет считаем из donation.amount — убираем дублирующий запрос к БД
+  const priorityScore = Math.floor(donation.amount / 100);
   console.log(`💰 [ADD TO QUEUE] priorityScore: ${priorityScore}`);
 
-  const status = 'pending';
-  console.log(`🔄 [STATUS CHANGE] Меняю статус на: ${status}`);
-  console.log(`💰 [ADD TO QUEUE] Добавление в очередь: track_id=${track.id}, donation_id=${donation.id}`);
-  console.log(`💰 [ADD TO QUEUE] Данные для вставки:`, {
-    track_id: track.id,
-    donation_id: donation.id,
-    position: 1,
-    status: status,
-    priority_score: priorityScore,
-    votes_count: 0,
-  });
-  
   const { error: queueError } = await supabaseAdmin
     .from('queue')
     .insert({
@@ -339,58 +265,18 @@ export async function addTrackToQueue(donationId: string) {
 
   if (queueError) {
     console.error(`❌ [ADD TO QUEUE] Queue insert error:`, queueError);
-    console.error(`❌ [ADD TO QUEUE] Данные для вставки:`, {
-      track_id: track.id,
-      donation_id: donation.id,
-      position: 1,
-      status: 'pending',
-      priority_score: priorityScore,
-      votes_count: 0,
-    });
-    console.error(`❌ [ADD TO QUEUE] Supabase URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'MISSING');
-    console.error(`❌ [ADD TO QUEUE] SUPABASE_SERVICE_KEY:`, process.env.SUPABASE_SERVICE_KEY ? 'SET' : 'MISSING');
     throw new Error('Failed to add to queue');
   }
-  console.log(`✅ [ADD TO QUEUE] Трек добавлен!`);
+
   console.log(`✅ [ADD TO QUEUE] Трек успешно добавлен в очередь!`);
-  
-  // Проверка: считываем добавленную запись из базы
-  try {
-    const { data: insertedItem, error: checkError } = await supabaseAdmin
-      .from('queue')
-      .select('*')
-      .eq('donation_id', donation.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (checkError) {
-      console.error(`❌ [ADD TO QUEUE] Ошибка проверки вставленной записи:`, checkError);
-    } else {
-      console.log(`💰 [ADD TO QUEUE] Проверка вставленной записи:`, {
-        id: insertedItem?.id,
-        status: insertedItem?.status,
-        track_id: insertedItem?.track_id,
-        donation_id: insertedItem?.donation_id
-      });
-    }
-  } catch (checkError) {
-    console.error(`❌ [ADD TO QUEUE] Ошибка проверки:`, checkError);
-  }
 }
 
-/**
- * Запускает трек, сначала останавливая все играющие треки
- * 1. Находит все треки со статусом 'playing'
- * 2. Обновляет их на 'played' с ended_at = NOW()
- * 3. Запускает новый трек со статусом 'playing'
- */
 export async function startPlayingTrack(queueId: string) {
   console.log('🔄 [START PLAYING] queueId:', queueId);
-  
+
   const { supabaseAdmin } = await import('@/lib/supabase');
-  
-  // Сначала заверши все текущие playing треки
+
+  // Завершаем все текущие playing треки
   const { error: stopError } = await supabaseAdmin
     .from('queue')
     .update({ status: 'played', ended_at: new Date().toISOString() })
@@ -399,32 +285,25 @@ export async function startPlayingTrack(queueId: string) {
   if (stopError) {
     console.error('❌ [START PLAYING] Остановка треков:', stopError);
   }
-  
-  // Запусти новый трек
+
+  // Запускаем новый трек
   const { data, error } = await supabaseAdmin
     .from('queue')
-    .update({
-      status: 'playing',
-      started_at: new Date().toISOString()
-    })
+    .update({ status: 'playing', started_at: new Date().toISOString() })
     .eq('id', queueId)
-    .eq('status', 'pending')  // Важно! Только если статус pending
+    .eq('status', 'pending') // Только если ещё pending
     .select()
     .single();
-
-  console.log('🔄 [START PLAYING] Результат:', JSON.stringify(data));
 
   if (error) {
     console.error('❌ [START PLAYING] Ошибка:', error);
     throw error;
   }
-  
+
+  console.log('🔄 [START PLAYING] Результат:', JSON.stringify(data));
   return data;
 }
 
-/**
- * Получает текущий играющий трек
- */
 export async function getCurrentPlayingTrack() {
   const { supabaseAdmin } = await import('@/lib/supabase');
 

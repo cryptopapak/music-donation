@@ -3,23 +3,24 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { addTrackToQueue } from '@/lib/database';
 import crypto from 'crypto';
 
-// ЮKassa webhook секрет (для проверки HMAC)
 const YUKASSA_WEBHOOK_SECRET = process.env.YUKASSA_WEBHOOK_SECRET || process.env.YUKASSA_SECRET_KEY;
 
-// Проверка HMAC подписи от ЮKassa
 function verifyHmac(requestBody: string, signature: string): boolean {
   if (!YUKASSA_WEBHOOK_SECRET) {
     console.warn('⚠️ YUKASSA_WEBHOOK_SECRET не настроен');
-    return true; // Пропускаем проверку если нет секрета (для разработки)
+    // Пропускаем проверку только в dev режиме
+    return process.env.NODE_ENV === 'development';
   }
-
   try {
     const expectedSignature = crypto
       .createHmac('sha256', YUKASSA_WEBHOOK_SECRET)
       .update(requestBody)
       .digest('base64');
-    
-    return signature === expectedSignature;
+    // timingSafeEqual защищает от timing-атак
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
   } catch (error) {
     console.error('HMAC verification error:', error);
     return false;
@@ -30,38 +31,28 @@ export async function POST(request: NextRequest) {
   try {
     console.log('💰 [WEBHOOK] === НОВЫЙ ЗАПРОС ===');
     const rawBody = await request.text();
-    console.log('💰 [WEBHOOK] Raw body received:', rawBody.substring(0, 500) + (rawBody.length > 500 ? '...' : ''));
-    
     const signature = request.headers.get('yookassa-signature') || '';
     console.log('💰 [WEBHOOK] HMAC signature:', signature || 'MISSING');
-    
-    // Проверка HMAC подписи (отключена для тестирования)
-    /*
+
+    // ✅ HMAC проверка включена (ранее была закомментирована)
     if (process.env.PAYMENT_PROVIDER === 'yukassa') {
       if (!verifyHmac(rawBody, signature)) {
         console.error('❌ Неверная HMAC подпись');
-        return NextResponse.json(
-          { error: 'Invalid signature' },
-          { status: 401 }
-        );
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
     }
-    */
 
     let body;
     try {
       body = JSON.parse(rawBody);
     } catch (parseError) {
       console.error('❌ [WEBHOOK] Ошибка парсинга JSON:', parseError);
-      console.error('❌ [WEBHOOK] Raw body:', rawBody);
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
-    
+
     const { event, object } = body;
     console.log('💰 [WEBHOOK] Event:', event);
-    console.log('💰 [WEBHOOK] Object:', JSON.stringify(object, null, 2));
 
-    // Обработка события payment.succeeded
     if (event === 'payment.succeeded') {
       await handlePaymentSucceeded(object);
     }
@@ -69,97 +60,55 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Payment webhook error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Обработка успешного платежа
 async function handlePaymentSucceeded(payment: any) {
   console.log('💰 [WEBHOOK] === ОБРАБОТКА ПЛАТЕЖА ===');
   const { id: paymentId, metadata, amount } = payment;
-  const { trackUrl, donationId } = metadata || {};
+  const { donationId } = metadata || {};
 
-  console.log(`💰 [WEBHOOK] Платеж ${paymentId} успешно завершен на сумму ${amount.value}`);
-  console.log(`💰 [WEBHOOK] Metadata:`, JSON.stringify(metadata, null, 2));
-  console.log(`💰 [WEBHOOK] donationId из metadata:`, donationId || 'MISSING');
-
-  // Проверка наличия donationId
-  if (!donationId || donationId.trim() === '') {
-    console.error('❌ [WEBHOOK] donationId отсутствует в metadata!');
-    console.error('❌ [WEBHOOK] Metadata целиком:', JSON.stringify(metadata, null, 2));
+  if (!donationId?.trim()) {
+    console.error('❌ [WEBHOOK] donationId отсутствует в metadata:', JSON.stringify(metadata));
     return;
   }
 
-  // Сначала проверим текущий статус доната
-  console.log(`💰 [WEBHOOK] Проверка текущего статуса доната с id=${donationId}`);
-  const { data: currentDonation, error: currentDonationError } = await supabaseAdmin
-    .from('donations')
-    .select('status')
-    .eq('id', donationId)
-    .single();
+  console.log(`💰 [WEBHOOK] Платеж ${paymentId} на сумму ${amount.value}`);
 
-  if (currentDonationError) {
-    console.error('❌ [WEBHOOK] Error fetching current donation:', currentDonationError);
-    console.error('❌ [WEBHOOK] Данные доната для проверки:', { donationId });
-  } else {
-    console.log(`💰 [WEBHOOK] Текущий статус доната: ${currentDonation?.status}`);
-  }
-
-  // Обновляем статус доната на completed только если он имеет статус 'processing'
-  console.log(`💰 [WEBHOOK] Обновление доната с id=${donationId} и payment_id=${paymentId}`);
-  const { data: updatedDonation, error: donationError } = await supabaseAdmin
+  // ✅ Обновляем только если статус 'processing' — идемпотентный апдейт
+  const { data: updatedDonation } = await supabaseAdmin
     .from('donations')
-    .update({
-      status: 'completed',
-      payment_id: paymentId,
-    })
+    .update({ status: 'completed', payment_id: paymentId })
     .eq('id', donationId)
     .eq('status', 'processing')
     .select()
     .single();
 
-  if (donationError) {
-    console.error('❌ [WEBHOOK] Donation update error:', donationError);
-    console.error('❌ [WEBHOOK] Данные доната:', { donationId, paymentId, status: 'processing' });
-  } else if (updatedDonation) {
-    console.log(`✅ [WEBHOOK] Статус доната обновлен на completed`);
-  } else {
-    console.log(`⚠️ [WEBHOOK] Донат не был в статусе 'processing', возможно уже обработан`);
-    // Even if the update didn't happen, we still try to add to queue
+  if (!updatedDonation) {
+    // ✅ Защита от webhook replay: если донат уже completed — трек уже в очереди
+    const { data: existing } = await supabaseAdmin
+      .from('donations')
+      .select('status')
+      .eq('id', donationId)
+      .single();
+
+    if (existing?.status === 'completed') {
+      console.log('⚠️ [WEBHOOK] Донат уже обработан, пропускаем (webhook replay)');
+      return;
+    }
+
+    console.warn('⚠️ [WEBHOOK] Донат не найден или не в статусе processing');
+    return;
   }
 
-  // Добавляем трек в очередь
-  console.log('💰 [WEBHOOK] Вызываю addTrackToQueue для donationId:', donationId);
+  console.log('✅ [WEBHOOK] Статус доната обновлён на completed');
+
   try {
     await addTrackToQueue(donationId);
-    console.log(`✅ [WEBHOOK] Трек добавлен в очередь: donation_id=${donationId}`);
-    
-    // Проверяем, что происходит с очередью после добавления
-    const { data: queueAfterAdd, error: queueError } = await supabaseAdmin
-      .from('queue')
-      .select('*')
-      .eq('donation_id', donationId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (queueError) {
-      console.error(`❌ [WEBHOOK] Ошибка проверки очереди:`, queueError);
-    } else {
-      console.log(`💰 [WEBHOOK] Проверка очереди после добавления:`, {
-        id: queueAfterAdd?.id,
-        status: queueAfterAdd?.status,
-        donation_id: queueAfterAdd?.donation_id
-      });
-    }
+    console.log(`✅ [WEBHOOK] Трек добавлен в очередь для donation_id=${donationId}`);
   } catch (queueError) {
     console.error(`❌ [WEBHOOK] Ошибка добавления в очередь:`, queueError);
-    console.error(`❌ [WEBHOOK] donationId: ${donationId}`);
-    console.error(`❌ [WEBHOOK] paymentId: ${paymentId}`);
-    console.error(`❌ [WEBHOOK] Данные платежа:`, JSON.stringify(payment, null, 2));
-    // Не возвращаем ошибку ЮKassa, чтобы не было повторных отправок
+    // Не бросаем ошибку наружу — ЮKassa не должна делать retry
   }
 }

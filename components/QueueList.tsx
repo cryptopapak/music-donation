@@ -28,19 +28,17 @@ export default function QueueList({ streamerId }: QueueListProps) {
   const [tracks, setTracks] = useState<QueueTrack[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // ✅ useState для UI — вызывает ре-рендер кнопки
+  const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef(false);
-  const playingRef = useRef<string | null>(null); // Changed from useState to useRef
-  const isMounted = useRef(true); // Added mountedRef for memory leak prevention
-  // Processing queue ID to prevent concurrent requests on same track
+  const isMounted = useRef(true);
+  // useRef только для защиты от двойных кликов (не для UI)
   const processingRef = useRef<string | null>(null);
 
-  console.log('🎵 QueueList component rendered');
-
   const fetchQueue = useCallback(async (showLoader = false) => {
-    if (!isMounted.current) return; // Check if component is still mounted
-    
+    if (!isMounted.current) return;
     if (isFetchingRef.current) {
       console.log('⏭️ Skipping fetch - already in progress');
       return;
@@ -51,15 +49,11 @@ export default function QueueList({ streamerId }: QueueListProps) {
       if (showLoader) setIsLoading(true);
       setError(null);
 
-      // First create the new controller and store it in the ref
+      // ✅ Сначала создаём новый контроллер, потом отменяем старый
       const newAbortController = new AbortController();
       const oldAbortController = abortControllerRef.current;
       abortControllerRef.current = newAbortController;
-
-      // Then abort the old controller if it exists
-      if (oldAbortController) {
-        oldAbortController.abort();
-      }
+      if (oldAbortController) oldAbortController.abort();
 
       const response = await fetch(`/api/queue?streamerId=${streamerId}`, {
         signal: newAbortController.signal,
@@ -69,27 +63,22 @@ export default function QueueList({ streamerId }: QueueListProps) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       console.log('📥 Fetched queue:', data);
-      
-      // Only update state if component is still mounted
+
       if (isMounted.current) {
         setTracks(data.tracks || []);
       }
-      
     } catch (err: any) {
       if (err.name === 'AbortError') {
         console.log('⏹️ Fetch aborted');
-        // Reset the fetching flag immediately to allow new requests
         isFetchingRef.current = false;
         setIsLoading(false);
         return;
       }
       console.error('❌ Error fetching queue:', err);
-      // Only update error state if component is still mounted
       if (isMounted.current) {
         setError('Ошибка загрузки очереди');
       }
     } finally {
-      // Only update loading states if component is still mounted
       if (isMounted.current) {
         isFetchingRef.current = false;
         setIsLoading(false);
@@ -98,71 +87,56 @@ export default function QueueList({ streamerId }: QueueListProps) {
   }, [streamerId]);
 
   useEffect(() => {
-    // Initialize mounted ref
     isMounted.current = true;
-    
     console.log('🔄 Starting queue polling for streamer:', streamerId);
     fetchQueue(true);
     const interval = setInterval(() => fetchQueue(false), 15000);
-    
+
     return () => {
       console.log('🛑 Stopping queue polling');
       clearInterval(interval);
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      // Mark component as unmounted
+      if (abortControllerRef.current) abortControllerRef.current.abort();
       isMounted.current = false;
     };
   }, [fetchQueue, streamerId]);
 
-  const handlePlay = async (trackId: string) => {
-    // Prevent double clicks and concurrent requests for same track
-    if (playingRef.current || processingRef.current === trackId) {
-      if (processingRef.current !== trackId) {
-        alert('Дождитесь завершения текущего трека');
-      }
-      return;
-    }
+  const handlePlay = async (queueId: string) => {
+    // ✅ Защита от двойного клика
+    if (loadingTrackId || processingRef.current === queueId) return;
 
-    // Mark this track as being processed
-    processingRef.current = trackId;
+    processingRef.current = queueId;
+    // ✅ useState триггерит ре-рендер кнопки (useRef не триггерит)
+    setLoadingTrackId(queueId);
 
     try {
-      // Update ref immediately for sync access
-      playingRef.current = trackId;
       const response = await fetch('/api/queue/next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamerId, trackId }),
+        // ✅ Передаём queueId (ID записи в queue), не trackId
+        body: JSON.stringify({ queueId, streamerId }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
         console.warn('⚠️ Play error:', data.error);
-        // Improved error handling
+
         if (response.status === 400) {
-          if (data.currentStatus) {
-            let statusMessage = '';
-            if (data.currentStatus === 'playing') {
-              statusMessage = 'Трек уже воспроизводится';
-            } else if (data.currentStatus === 'played') {
-              statusMessage = 'Трек уже воспроизведен';
-            } else if (data.currentStatus === 'skipped') {
-              statusMessage = 'Трек был пропущен';
-            } else {
-              statusMessage = `Трек находится в статусе: ${data.currentStatus}`;
-            }
-            
-            alert(`${statusMessage}. Автоматическое обновление очереди...`);
-          } else {
-            alert(data.error || 'Трек уже обработан. Обновляем очередь...');
-          }
-          // Refresh queue to sync state with DB
+          const statusMessages: Record<string, string> = {
+            playing: 'Трек уже воспроизводится',
+            played: 'Трек уже воспроизведён',
+            skipped: 'Трек был пропущен',
+          };
+          const msg = data.currentStatus
+            ? statusMessages[data.currentStatus] || `Статус: ${data.currentStatus}`
+            : data.error || 'Трек уже обработан';
+          alert(`${msg}. Обновляем очередь...`);
+          await fetchQueue(false);
+        } else if (response.status === 409) {
+          // Race condition — просто синхронизируемся
           await fetchQueue(false);
         } else if (response.status === 429) {
-          alert('Слишком много запросов. Пожалуйста, подождите немного.');
+          alert('Слишком много запросов. Подождите немного.');
         } else {
           alert(data.error || `Ошибка воспроизведения (${response.status})`);
         }
@@ -170,22 +144,7 @@ export default function QueueList({ streamerId }: QueueListProps) {
       }
 
       console.log('✅ Track started:', data);
-      // Only update state if component is mounted
-      if (isMounted.current) {
-        setTracks(prevTracks =>
-          prevTracks.map(t =>
-            t.id === trackId
-              ? {
-                  ...t,
-                  status: 'playing' as const,
-                  // Обновляем также вложенные объекты если нужно
-                }
-              : t
-          )
-        );
-      }
-      
-      // Use immediate fetch instead of timeout
+      // Немедленно синхронизируем с БД
       await fetchQueue(false);
 
     } catch (err: any) {
@@ -194,13 +153,11 @@ export default function QueueList({ streamerId }: QueueListProps) {
         alert('Ошибка сети');
       }
     } finally {
-      // Reset the refs immediately
-      if (playingRef.current === trackId) {
-        playingRef.current = null;
+      // ✅ Всегда сбрасываем оба состояния
+      if (isMounted.current) {
+        setLoadingTrackId(null);
       }
-      if (processingRef.current === trackId) {
-        processingRef.current = null;
-      }
+      processingRef.current = null;
     }
   };
 
@@ -230,16 +187,6 @@ export default function QueueList({ streamerId }: QueueListProps) {
   const pendingTracks = tracks.filter(t => t.status === 'pending');
   const playingTrack = tracks.find(t => t.status === 'playing');
 
-  // Дебаг информации перед рендером
-  console.log('🔍 [DEBUG JSX] tracks.length:', tracks.length);
-  if (tracks.length > 0) {
-    console.log('🔍 [DEBUG JSX] track[0]:', tracks[0]);
-    console.log('🔍 [DEBUG JSX] track[0]?.tracks?.title:', tracks[0]?.tracks?.title);
-    console.log('🔍 [DEBUG JSX] track[0]?.donation?.donor_name:', tracks[0]?.donation?.donor_name);
-    console.log('🔍 [DEBUG JSX] pendingTracks.length:', pendingTracks.length);
-    console.log('🔍 [DEBUG JSX] playingTrack:', playingTrack);
-  }
-
   return (
     <div className="space-y-6">
       {playingTrack && (
@@ -255,7 +202,7 @@ export default function QueueList({ streamerId }: QueueListProps) {
 
       <div>
         <h3 className="font-bold mb-3">Очередь ({pendingTracks.length})</h3>
-        
+
         {pendingTracks.length === 0 ? (
           <p className="text-gray-500 text-center py-8">Очередь пуста</p>
         ) : (
@@ -276,18 +223,19 @@ export default function QueueList({ streamerId }: QueueListProps) {
                   </div>
                 </div>
 
+                {/* ✅ loadingTrackId (useState) корректно обновляет кнопку */}
                 <button
                   onClick={() => handlePlay(track.id)}
-                  disabled={!!playingRef.current}
+                  disabled={!!loadingTrackId}
                   className={`px-4 py-2 rounded font-medium transition-colors ${
-                    playingRef.current === track.id
+                    loadingTrackId === track.id
                       ? 'bg-gray-300 text-gray-600 cursor-wait'
-                      : playingRef.current
+                      : loadingTrackId
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                       : 'bg-blue-500 text-white hover:bg-blue-600'
                   }`}
                 >
-                  {playingRef.current === track.id ? 'Загрузка...' : 'Играть'}
+                  {loadingTrackId === track.id ? 'Запуск...' : '▶ Играть'}
                 </button>
               </div>
             ))}
