@@ -110,12 +110,6 @@ export default function PrivacyPage() {
 
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-white mb-4">9. Контактная информация</h2>
-            <p className="mb-4">
-              По всем вопросам, связанным с обработкой персональных данных, обращайтесь:
-            </p>
-            <p className="mb-4">
-              Электронная почта: [Ваш email]
-            </p>
           </section>
         </div>
       </div>

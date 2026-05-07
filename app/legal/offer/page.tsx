@@ -100,12 +100,6 @@ export default function OfferPage() {
 
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-white mb-4">8. Реквизиты и контактная информация</h2>
-            <p className="mb-4">
-              Реквизиты исполнителя: ИНН 245211732109
-            </p>
-            <p className="mb-4">
-              Электронная почта: [Ваш email]
-            </p>
           </section>
         </div>
       </div>

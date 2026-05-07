@@ -104,12 +104,6 @@ export default function RefundPage() {
 
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-white mb-4">8. Контактная информация</h2>
-            <p className="mb-4">
-              По всем вопросам возврата денежных средств обращайтесь:
-            </p>
-            <p className="mb-4">
-              Электронная почта: [Ваш email]
-            </p>
           </section>
         </div>
       </div>
